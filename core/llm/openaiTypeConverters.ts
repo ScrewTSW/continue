@@ -357,11 +357,27 @@ export function fromChatCompletionChunk(
       })
     | undefined;
 
+  const xProgress = (chunk as any).x_progress as
+    | {
+        gen: number;
+        think: number;
+        prompt: number;
+        elapsed: number;
+        tok_s: number;
+        ctx_size: number;
+        ctx_used: number;
+      }
+    | undefined;
+
   if (delta?.content) {
-    return {
+    const msg: AssistantChatMessage = {
       role: "assistant",
       content: delta.content,
     };
+    if (xProgress) {
+      msg.metadata = { x_progress: xProgress };
+    }
+    return msg;
   } else if (delta?.tool_calls) {
     const toolCalls = delta?.tool_calls
       .filter((tool_call) => !tool_call.type || tool_call.type === "function")
@@ -392,7 +408,18 @@ export function fromChatCompletionChunk(
       signature: delta?.reasoning_details?.[0]?.signature,
       reasoning_details: delta?.reasoning_details as any[],
     };
+    if (xProgress) {
+      (message as any).metadata = { x_progress: xProgress };
+    }
     return message;
+  }
+
+  if (xProgress) {
+    return {
+      role: "assistant",
+      content: "",
+      metadata: { x_progress: xProgress },
+    };
   }
 
   return undefined;

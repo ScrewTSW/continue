@@ -260,6 +260,15 @@ type SessionState = {
   contextPercentage?: number;
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
+  xProgress?: {
+    gen: number;
+    think: number;
+    prompt: number;
+    elapsed: number;
+    tok_s: number;
+    ctx_size: number;
+    ctx_used: number;
+  } | null;
 };
 
 export const INITIAL_SESSION_STATE: SessionState = {
@@ -280,6 +289,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   lastSessionId: undefined,
   newestToolbarPreviewForInput: {},
   compactionLoading: {},
+  xProgress: null,
 };
 
 export const sessionSlice = createSlice({
@@ -309,6 +319,7 @@ export const sessionSlice = createSlice({
     },
     setActive: (state) => {
       state.isStreaming = true;
+      state.xProgress = null;
     },
     setIsGatheringContext: (state, { payload }: PayloadAction<boolean>) => {
       const curMessage = state.history.at(-1);
@@ -568,6 +579,14 @@ export const sessionSlice = createSlice({
     streamUpdate: (state, action: PayloadAction<ChatMessage[]>) => {
       if (state.history.length) {
         for (const message of action.payload) {
+          const meta = (message as any).metadata;
+          if (meta?.x_progress) {
+            state.xProgress = meta.x_progress as SessionState["xProgress"];
+            delete meta.x_progress;
+            if (Object.keys(meta).length === 0) {
+              delete (message as any).metadata;
+            }
+          }
           let lastItem = state.history[state.history.length - 1];
           let lastMessage = lastItem.message;
 
