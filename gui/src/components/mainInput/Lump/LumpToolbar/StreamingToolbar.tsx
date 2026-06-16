@@ -1,16 +1,38 @@
+import { useEffect, useRef, useState } from "react";
 import { useAppSelector } from "../../../../redux/hooks";
 import { getAltKeyLabel, getMetaKeyLabel, isJetBrains } from "../../../../util";
 import { GeneratingIndicator } from "./GeneratingIndicator";
 
 export function ProgressLabels() {
   const xProgress = useAppSelector((state) => state.session.xProgress);
-  if (!xProgress) return null;
+  const isStreaming = useAppSelector((state) => state.session.isStreaming);
+  const startRef = useRef<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (isStreaming && !startRef.current) {
+      startRef.current = Date.now();
+    } else if (!isStreaming && !xProgress) {
+      startRef.current = null;
+      setElapsed(0);
+    }
+  }, [isStreaming, xProgress]);
+
+  useEffect(() => {
+    if (!startRef.current || !isStreaming) return;
+    const tick = () => setElapsed((Date.now() - startRef.current!) / 1000);
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
+  }, [isStreaming]);
+
+  if (!xProgress && elapsed <= 0) return null;
 
   const parts: string[] = [];
-  const p = xProgress as any;
+  const p = (xProgress as any) || {};
 
-  if (p.elapsed > 0) {
-    parts.push(`${p.elapsed.toFixed(1)}s`);
+  if (elapsed > 0) {
+    parts.push(`${elapsed.toFixed(1)}s`);
   }
   if (p.loading) {
     parts.push("loading model");
@@ -22,11 +44,8 @@ export function ProgressLabels() {
       parts.push("prompt eval");
     }
   } else {
-    if (p.think > 0) {
-      parts.push(`${p.think} think`);
-    }
     if (p.gen > 0) {
-      parts.push(`${p.gen} gen`);
+      parts.push(`${p.gen} tokens`);
     }
     if (p.tok_s > 0) {
       parts.push(`${p.tok_s.toFixed(1)} tok/s`);
@@ -36,7 +55,11 @@ export function ProgressLabels() {
     const pct = ((p.ctx_used / p.ctx_size) * 100).toFixed(0);
     const usedK = (p.ctx_used / 1024).toFixed(1);
     const totalK = (p.ctx_size / 1024).toFixed(0);
-    parts.push(`${usedK}k/${totalK}k ctx (${pct}%)`);
+    let ctxLabel = `${usedK}k/${totalK}k ctx (${pct}%)`;
+    if (p.cached > 0) {
+      ctxLabel += ` ${p.cached} cached`;
+    }
+    parts.push(ctxLabel);
   }
   if (p.vram_used && p.vram_total) {
     parts.push(
@@ -48,11 +71,12 @@ export function ProgressLabels() {
       `${(p.ram_used / 1024).toFixed(1)}/${(p.ram_total / 1024).toFixed(0)}G RAM`,
     );
   }
-  if (p.gpu_util != null && p.gpu_temp) {
-    parts.push(`GPU ${p.gpu_util}% ${p.gpu_temp}°C`);
-  } else if (p.gpu_temp) {
-    parts.push(`${p.gpu_temp}°C`);
-  }
+  const hw: string[] = [];
+  if (p.gpu_util != null) hw.push(`GPU ${p.gpu_util}%`);
+  if (p.gpu_temp) hw.push(`${p.gpu_temp}°C`);
+  if (p.cpu_util != null) hw.push(`CPU ${p.cpu_util}%`);
+  if (p.cpu_temp) hw.push(`${p.cpu_temp}°C`);
+  if (hw.length > 0) parts.push(hw.join(" "));
 
   if (parts.length === 0) return null;
 
