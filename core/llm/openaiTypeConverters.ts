@@ -414,7 +414,7 @@ export function fromChatCompletionChunk(
     return message;
   }
 
-  if (xProgress) {
+  if (xProgress && !chunk.choices?.[0]?.finish_reason) {
     return {
       role: "assistant",
       content: "",
