@@ -19,7 +19,11 @@ import { EditToolbar } from "./EditToolbar";
 import { IsApplyingToolbar } from "./IsApplyingToolbar";
 import { PendingApplyStatesToolbar } from "./PendingApplyStatesToolbar";
 import { PendingToolCallToolbar } from "./PendingToolCallToolbar";
-import { ProgressLabels, StreamingToolbar } from "./StreamingToolbar";
+import {
+  ModelStateLabel,
+  ProgressLabels,
+  StreamingToolbar,
+} from "./StreamingToolbar";
 import { TtsActiveToolbar } from "./TtsActiveToolbar";
 
 // Keyboard shortcut detection utilities
@@ -211,6 +215,7 @@ export function LumpToolbar() {
   return (
     <>
       <ProgressLabels />
+      <ModelStateLabel />
       <BlockSettingsTopToolbar />
     </>
   );
