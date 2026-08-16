@@ -1,7 +1,104 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppSelector } from "../../../../redux/hooks";
+import {
+  useOrchestratorStatus,
+  type OrchestratorModel,
+} from "../../../../hooks/useOrchestratorStatus";
+import { selectSelectedChatModel } from "../../../../redux/slices/configSlice";
 import { getAltKeyLabel, getMetaKeyLabel, isJetBrains } from "../../../../util";
 import { GeneratingIndicator } from "./GeneratingIndicator";
+
+const formatCountdown = (secs: number) => {
+  if (secs <= 0) return "0s";
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+};
+
+type ModelState = {
+  label: string;
+  className: string;
+};
+
+/**
+ * Coarse model state, derived from the orchestrator status poll.
+ *
+ * The poll is authoritative here in a way the SSE stream cannot be: it still
+ * reports correctly while idle, between requests, and when the model was
+ * unloaded out from under us. First match wins.
+ *
+ * Returns null when there is no orchestrator to report on, so that
+ * non-orchestrator endpoints render nothing at all.
+ */
+export function deriveModelState(
+  probed: boolean,
+  available: boolean,
+  model: OrchestratorModel | undefined,
+  aliasKnown: boolean,
+  isStreaming: boolean,
+): ModelState | null {
+  if (!probed) return null;
+
+  if (!available) {
+    // Only meaningful once we know this endpoint really is an orchestrator.
+    return null;
+  }
+
+  if (!model) {
+    // Distinguish "nothing loaded" from "this model isn't the loaded one",
+    // which the alias match would otherwise collapse together.
+    return aliasKnown
+      ? { label: "Not loaded", className: "text-description-muted" }
+      : {
+          label: "Model not on orchestrator",
+          className: "text-description-muted",
+        };
+  }
+
+  if (model.loading || (!model.alive && isStreaming)) {
+    return {
+      label: "Loading into VRAM",
+      className: "animate-pulse text-warning",
+    };
+  }
+
+  if (model.active_requests > 0) {
+    return { label: "Generating", className: "animate-pulse text-accent" };
+  }
+
+  return { label: "Loaded", className: "text-success" };
+}
+
+export function ModelStateLabel() {
+  const isStreaming = useAppSelector((state) => state.session.isStreaming);
+  const selectedModel = useAppSelector(selectSelectedChatModel);
+  const status = useOrchestratorStatus(isStreaming);
+
+  const model = status.loaded.find((m) => m.alias === selectedModel?.model);
+  const aliasKnown = status.loaded.length === 0;
+  const state = deriveModelState(
+    status.probed,
+    status.available,
+    model,
+    aliasKnown,
+    isStreaming,
+  );
+
+  if (!state) return null;
+
+  const showCountdown =
+    model && model.active_requests === 0 && model.alive && model.unload_in > 0;
+
+  return (
+    <span className="text-description ml-2 flex items-center gap-1.5 text-xs opacity-70">
+      <span className={state.className}>{state.label}</span>
+      {model?.is_hybrid && <span className="text-warning">hybrid</span>}
+      {showCountdown && (
+        <span>unloads in {formatCountdown(model.unload_in)}</span>
+      )}
+    </span>
+  );
+}
 
 export function ProgressLabels() {
   const xProgress = useAppSelector((state) => state.session.xProgress);
@@ -103,6 +200,7 @@ export function StreamingToolbar({
       <div className="flex items-center">
         <GeneratingIndicator />
         <ProgressLabels />
+        <ModelStateLabel />
       </div>
       <div
         onClick={onStop}
