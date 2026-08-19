@@ -19,7 +19,7 @@
       "out/tree-sitter-wasms/*"
     ],
     "targets": [
-      "node22-darwin-arm64"
+      "node22-macos-arm64"
     ],
     "outputPath": "bin"
   },
