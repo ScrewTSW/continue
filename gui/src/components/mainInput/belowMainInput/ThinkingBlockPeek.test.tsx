@@ -88,6 +88,29 @@ describe("ThinkingBlockPeek", () => {
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("collapses an already-mounted block when the setting is turned off", () => {
+    const { rerender, store } = renderPeek(true);
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+
+    const next = store.getState().config;
+    store.dispatch({
+      type: "config/updateConfig",
+      payload: { ...next.config, ui: { expandThinkingBlocks: false } },
+    });
+
+    rerender(
+      <Provider store={store}>
+        <ThinkingBlockPeek
+          content="reasoning content"
+          index={0}
+          prevItem={null}
+        />
+      </Provider>,
+    );
+
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("stays expanded across streaming rerenders while the setting is on", () => {
     const store = createMockStore(true);
 
