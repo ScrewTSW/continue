@@ -1,0 +1,73 @@
+name: OSV-Scanner
+
+# Vulnerability scanning via Google's OSV database, in two modes:
+#
+#   scan-pr       diffs the base branch against the PR head and reports only
+#                 vulnerabilities the PR *introduces*. Blocking: a PR cannot
+#                 add a new known-vulnerable dependency.
+#
+#   scan-main     full recursive scan of the whole tree on push to main and on
+#                 published releases. Non-blocking: this repo has never been
+#                 scanned, so the first runs surface a pre-existing backlog that
+#                 predates the scanner. Findings land in Security > Code
+#                 scanning. Flip fail-on-vuln to true once that backlog is
+#                 triaged.
+#
+# Both jobs call google/osv-scanner-action's reusable workflows directly rather
+# than vendoring them, so upstream fixes arrive without us maintaining a copy.
+# Pinned by commit SHA, not tag: a tag can be repointed, a SHA cannot. Keep the
+# trailing version comment in sync when bumping so Dependabot can read it.
+
+on:
+  pull_request:
+    branches: ["main"]
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: ["main"]
+  release:
+    types: [published]
+
+# Superseded pushes should stop burning runners; see issue #6. The PR number
+# keeps concurrent PRs in separate groups, so this cancels only older runs of
+# *this* workflow on *this* PR. github.ref is the fallback for the non-PR
+# triggers (push/release), where pull_request.number is empty.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan-pr:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    permissions:
+      # Required to upload the SARIF file to CodeQL.
+      # See https://github.com/github/codeql-action/issues/2117
+      actions: read
+      # Required to write the SARIF file to the Security tab.
+      security-events: write
+      contents: read
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67" # v2.5.1
+    with:
+      # --include-git-root also scans committed source, not just lockfiles.
+      scan-args: |-
+        --include-git-root
+        -r
+        ./
+      # Only new vulnerabilities reach this job, so failing is safe: a
+      # pre-existing CVE elsewhere in the tree will not block an unrelated PR.
+      fail-on-vuln: true
+
+  scan-main:
+    if: ${{ github.event_name == 'push' || github.event_name == 'release' }}
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67" # v2.5.1
+    with:
+      scan-args: |-
+        --include-git-root
+        -r
+        ./
+      # Report-only for now: see the note at the top of this file.
+      fail-on-vuln: false
