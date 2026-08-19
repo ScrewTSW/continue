@@ -8,6 +8,13 @@ const { execCmdSync } = require("../../../scripts/util/index");
 
 const continueDir = path.join(__dirname, "..", "..", "..");
 
+// Resolved from the sqlite3 actually installed in core so a dependency bump
+// stays in lockstep with the prebuilt binary we unpack over it. napi-v6 needs
+// Node >=18.17, which our engines floor already requires.
+const SQLITE_VERSION =
+  require("../../../core/node_modules/sqlite3/package.json").version;
+const NAPI_VERSION = 6;
+
 function copyTokenizers() {
   fs.copyFileSync(
     path.join(__dirname, "../../../core/llm/llamaTokenizerWorkerPool.mjs"),
@@ -216,22 +223,15 @@ async function copyNodeModules() {
 async function downloadSqliteBinary(target) {
   console.log("[info] Downloading pre-built sqlite3 binary");
   rimrafSync("../../core/node_modules/sqlite3/build");
-  const downloadUrl = {
-    "darwin-arm64":
-      "https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v6-darwin-arm64.tar.gz",
-    "linux-arm64":
-      "https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v3-linux-arm64.tar.gz",
-    "win32-arm64":
-      "https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v6-win32-arm64.tar.gz",
-    "linux-x64":
-      "https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v3-linux-x64.tar.gz",
-    "darwin-x64":
-      "https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v6-darwin-x64.tar.gz",
-    "win32-x64":
-      "https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v3-win32-x64.tar.gz",
-  }[target];
+  // node-sqlite3 publishes no win32-arm64 prebuild, so that target falls back
+  // to our own mirror. Everything else is resolved from the version installed
+  // in core, so a bump can't leave a stale binding behind.
+  const downloadUrl =
+    target === "win32-arm64"
+      ? "https://continue-server-binaries.s3.us-west-1.amazonaws.com/win32-arm64/node_sqlite3.tar.gz"
+      : `https://github.com/TryGhost/node-sqlite3/releases/download/v${SQLITE_VERSION}/sqlite3-v${SQLITE_VERSION}-napi-v${NAPI_VERSION}-${target}.tar.gz`;
   execCmdSync(
-    `curl -L -o ../../core/node_modules/sqlite3/build.tar.gz ${downloadUrl}`,
+    `curl -fL -o ../../core/node_modules/sqlite3/build.tar.gz ${downloadUrl}`,
   );
   execCmdSync("cd ../../core/node_modules/sqlite3 && tar -xvzf build.tar.gz");
   fs.unlinkSync("../../core/node_modules/sqlite3/build.tar.gz");

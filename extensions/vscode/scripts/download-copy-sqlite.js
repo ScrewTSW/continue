@@ -7,6 +7,17 @@ const { rimrafSync } = require("rimraf");
 
 const { execCmdSync } = require("../../../scripts/util");
 
+// Keep the pre-built binary in lockstep with the sqlite3 version actually
+// installed in core, so a dependency bump can't silently leave us unpacking a
+// mismatched native binding over it.
+const SQLITE_VERSION =
+  require("../../../core/node_modules/sqlite3/package.json").version;
+
+// node-sqlite3 publishes both napi-v3 and napi-v6 builds for every target it
+// supports. napi-v6 needs Node >=18.17, which our engines floor already
+// requires, so prefer it everywhere.
+const NAPI_VERSION = 6;
+
 /**
  * download a file using fetch API
  * @param {string} url
@@ -47,9 +58,7 @@ async function downloadSqlite(target, targetDir) {
     // node-sqlite3 doesn't have a pre-built binary for win32-arm64
     target === "win32-arm64"
       ? "https://continue-server-binaries.s3.us-west-1.amazonaws.com/win32-arm64/node_sqlite3.tar.gz"
-      : `https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v6-${
-          target
-        }.tar.gz`;
+      : `https://github.com/TryGhost/node-sqlite3/releases/download/v${SQLITE_VERSION}/sqlite3-v${SQLITE_VERSION}-napi-v${NAPI_VERSION}-${target}.tar.gz`;
   await downloadFile(downloadUrl, targetDir);
 }
 
