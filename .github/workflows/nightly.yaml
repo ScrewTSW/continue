@@ -13,8 +13,15 @@ on:
         type: boolean
         default: false
 
+# Never cancel a release run in progress: cancelling mid-upload can leave a
+# partially populated release. Queue instead.
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+# Least privilege by default; only the jobs that touch releases get write.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # Skip the (expensive) matrix entirely when main hasn't moved since the
@@ -26,9 +33,19 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+
+      # `workflow_dispatch` allows any ref to be selected, so without this a
+      # nightly could be published from unmerged feature-branch code.
+      # Scheduled runs always use the default branch.
+      - name: Refuse to build from anything but main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Nightly builds must run from refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
 
       - name: Check for new commits since last nightly
         id: check
@@ -39,7 +56,9 @@ jobs:
             exit 0
           fi
 
-          LAST_TAG=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -n1)
+          # `--merged HEAD` so a nightly tag created on some other branch
+          # can't win the sort and skew the commit count.
+          LAST_TAG=$(git tag -l 'v*-nightly.*' --merged HEAD --sort=-creatordate | head -n1)
 
           if [ -z "$LAST_TAG" ]; then
             echo "No previous nightly tag found; building"
@@ -112,7 +131,7 @@ jobs:
             arch: arm64
             npm_config_arch: arm64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -139,7 +158,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload .vsix artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}-vsix
           path: "extensions/vscode/*.vsix"
@@ -147,10 +166,12 @@ jobs:
   release:
     needs: [check-changes, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: "*-vsix"
           path: vsix-artifacts
@@ -182,6 +203,8 @@ jobs:
   prune:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Delete nightly releases older than the most recent 14
         env:
