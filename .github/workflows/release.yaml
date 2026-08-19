@@ -33,6 +33,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Steps below run `node`, so pin it rather than inheriting the runner
+      # image default.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: ".nvmrc"
+
       - name: Resolve version and tag
         id: version
         run: |
@@ -43,6 +49,10 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Releasing $TAG"
 
+      # NOTE: `extensions/vscode/scripts/versionCheck.js` (rejects odd minor
+      # versions) is deliberately NOT run here. It exists only to protect VS
+      # Code Marketplace odd/even pre-release semantics, and this fork
+      # publishes to GitHub Releases only. It now has no callers.
       - name: Fail if tag already exists
         run: |
           TAG="${{ steps.version.outputs.tag }}"

@@ -37,6 +37,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Steps below run `node` before the build action sets it up, so pin it
+      # here rather than inheriting whatever the runner image defaults to.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: ".nvmrc"
+
       # `workflow_dispatch` allows any ref to be selected, so without this a
       # nightly could be published from unmerged feature-branch code.
       # Scheduled runs always use the default branch.
@@ -134,6 +140,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+
+      # The version rewrite below runs before the build action's own setup.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: ".nvmrc"
 
       - name: Set nightly version in package.json
         shell: bash
