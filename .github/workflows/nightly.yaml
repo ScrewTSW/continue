@@ -221,12 +221,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list \
-            --repo "${{ github.repository }}" \
-            --limit 200 \
-            --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | test("-nightly\\."))]
-                  | sort_by(.createdAt) | reverse | .[14:] | .[].tagName' \
+          # `gh release list --limit N` silently truncates, which would leave
+          # anything past the window un-prunable. Paginate the API instead so
+          # the backlog size can never outrun the prune.
+          gh api \
+            --paginate \
+            "repos/${{ github.repository }}/releases" \
+            --jq '.[] | {tagName: .tag_name, createdAt: .created_at}' \
+            | jq -s '[.[] | select(.tagName | test("-nightly\\."))]
+                     | sort_by(.createdAt) | reverse | .[14:] | .[].tagName' \
+            | jq -r '.' \
             > to-delete.txt
 
           if [ ! -s to-delete.txt ]; then
