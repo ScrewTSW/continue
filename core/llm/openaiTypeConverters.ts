@@ -39,6 +39,7 @@ import {
   TextMessagePart,
   ThinkingChatMessage,
   ToolCallDelta,
+  XProgress,
 } from "..";
 import { stripImages } from "../util/messageContent";
 
@@ -357,17 +358,9 @@ export function fromChatCompletionChunk(
       })
     | undefined;
 
-  const xProgress = (chunk as any).x_progress as
-    | {
-        gen: number;
-        think: number;
-        prompt: number;
-        elapsed: number;
-        tok_s: number;
-        ctx_size: number;
-        ctx_used: number;
-      }
-    | undefined;
+  // `x_progress` is a non-standard field the local orchestrator adds to
+  // streaming chunks; it is absent from the OpenAI SDK's chunk type.
+  const xProgress = (chunk as { x_progress?: XProgress }).x_progress;
 
   if (delta?.content) {
     const msg: AssistantChatMessage = {
@@ -409,7 +402,7 @@ export function fromChatCompletionChunk(
       reasoning_details: delta?.reasoning_details as any[],
     };
     if (xProgress) {
-      (message as any).metadata = { x_progress: xProgress };
+      message.metadata = { x_progress: xProgress };
     }
     return message;
   }

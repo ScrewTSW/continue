@@ -24,6 +24,7 @@ import {
   Tool,
   ToolCallDelta,
   ToolCallState,
+  XProgress,
 } from "core";
 import { mergeReasoningDetails } from "core/llm/openaiTypeConverters";
 import { NEW_SESSION_TITLE } from "core/util/constants";
@@ -223,15 +224,7 @@ type SessionState = {
   contextPercentage?: number;
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
-  xProgress?: {
-    gen: number;
-    think: number;
-    prompt: number;
-    elapsed: number;
-    tok_s: number;
-    ctx_size: number;
-    ctx_used: number;
-  } | null;
+  xProgress?: XProgress | null;
 };
 
 export const INITIAL_SESSION_STATE: SessionState = {
@@ -534,14 +527,24 @@ export const sessionSlice = createSlice({
     },
     streamUpdate: (state, action: PayloadAction<ChatMessage[]>) => {
       if (state.history.length) {
-        for (const message of action.payload) {
-          const meta = (message as any).metadata;
-          if (meta?.x_progress) {
-            state.xProgress = meta.x_progress as SessionState["xProgress"];
-            delete meta.x_progress;
-            if (Object.keys(meta).length === 0) {
-              delete (message as any).metadata;
-            }
+        for (const rawMessage of action.payload) {
+          // `x_progress` is transport telemetry, not conversation content.
+          // Lift it into session state and continue with a copy that omits it,
+          // rather than deleting from `action.payload`: Redux does not freeze
+          // payloads, so mutating one silently corrupts action replay,
+          // devtools time-travel, and any other reducer watching this action.
+          let message = rawMessage;
+          if (rawMessage.metadata?.x_progress) {
+            const { x_progress, ...restMetadata } = rawMessage.metadata;
+            state.xProgress = x_progress;
+            message = {
+              ...rawMessage,
+              // Drop `metadata` entirely when `x_progress` was its only key,
+              // so an otherwise-empty object is not persisted.
+              ...(Object.keys(restMetadata).length > 0
+                ? { metadata: restMetadata }
+                : { metadata: undefined }),
+            };
           }
           let lastItem = state.history[state.history.length - 1];
           let lastMessage = lastItem.message;
