@@ -376,14 +376,14 @@ export interface ToolResultChatMessage {
   content: string;
   toolCallId: string;
   /** Arbitrary per-message metadata (IDs, provider-specific info, etc.) */
-  metadata?: Record<string, unknown>;
+  metadata?: ChatMessageMetadata;
 }
 
 export interface UserChatMessage {
   role: "user";
   content: MessageContent;
   /** Arbitrary per-message metadata (IDs, provider-specific info, etc.) */
-  metadata?: Record<string, unknown>;
+  metadata?: ChatMessageMetadata;
 }
 
 export interface ThinkingChatMessage {
@@ -397,7 +397,30 @@ export interface ThinkingChatMessage {
     [key: string]: any;
   }[];
   /** Arbitrary per-message metadata (IDs, provider-specific info, etc.) */
-  metadata?: Record<string, unknown>;
+  metadata?: ChatMessageMetadata;
+}
+
+/**
+ * Live generation telemetry emitted by the local orchestrator as an
+ * `x_progress` field on streaming chunks.
+ *
+ * This is transport-level information about the in-flight request, not
+ * conversation content: it is surfaced in the streaming toolbar and must not
+ * be persisted onto the stored chat message.
+ */
+export interface XProgress {
+  gen: number;
+  think: number;
+  prompt: number;
+  elapsed: number;
+  tok_s: number;
+  ctx_size: number;
+  ctx_used: number;
+}
+
+/** Well-known keys carried in {@link ChatMessage} `metadata`. */
+export interface ChatMessageMetadata extends Record<string, unknown> {
+  x_progress?: XProgress;
 }
 
 /**
@@ -427,14 +450,14 @@ export interface AssistantChatMessage {
   toolCalls?: ToolCallDelta[];
   usage?: Usage;
   /** Arbitrary per-message metadata (IDs, provider-specific info, etc.) */
-  metadata?: Record<string, unknown>;
+  metadata?: ChatMessageMetadata;
 }
 
 export interface SystemChatMessage {
   role: "system";
   content: string;
   /** Arbitrary per-message metadata (IDs, provider-specific info, etc.) */
-  metadata?: Record<string, unknown>;
+  metadata?: ChatMessageMetadata;
 }
 
 export type ChatMessage =
