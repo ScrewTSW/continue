@@ -556,7 +556,11 @@ function compileChatMessages({
     currentTotal + systemMsgTokens + toolTokens + lastMessagesTokens;
   const availableTokens =
     contextLength - countingSafetyBuffer - minOutputTokens;
-  const contextPercentage = inputTokens / availableTokens;
+  // Guard the degenerate denominator and cap the ratio: inputTokens re-adds
+  // system/tool/last-message tokens after pruning, so fixed overhead on a
+  // small context window can push this well above 1.
+  const contextPercentage =
+    availableTokens > 0 ? Math.min(inputTokens / availableTokens, 1) : 1;
   return {
     compiledChatMessages: reassembled,
     didPrune,

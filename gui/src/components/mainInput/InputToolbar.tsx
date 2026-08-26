@@ -97,6 +97,11 @@ function InputToolbar(props: InputToolbarProps) {
             </HoverItem>
           </ToolTip>
           <div className="xs:flex text-description -mb-1 hidden items-center transition-colors duration-200">
+            {!isInEdit && (
+              <HoverItem>
+                <ContextStatus />
+              </HoverItem>
+            )}
             {props.toolbarOptions?.hideImageUpload ||
               (supportsImages && (
                 <>
@@ -174,7 +179,6 @@ function InputToolbar(props: InputToolbarProps) {
             fontSize: tinyFont,
           }}
         >
-          {!isInEdit && <ContextStatus />}
           {!props.toolbarOptions?.hideUseCodebase && !isInEdit && (
             <div className="hidden transition-colors duration-200 hover:underline md:flex">
               <HoverItem
