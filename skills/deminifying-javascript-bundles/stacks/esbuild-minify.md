@@ -1,7 +1,15 @@
 # Attack plan: esbuild `--minify`
 
-**Status: tested.** Verified against a 2,650,012-byte VSCode extension bundle
-(`anthropic.claude-code-2.1.220`), 2026-08.
+**Status: tested.** Verified against two bundles from the same VSCode extension
+(`anthropic.claude-code-2.1.220`), 2026-08:
+
+| Bundle             | Bytes     | Lines | Longest line | After webcrack+prettier |
+| ------------------ | --------- | ----- | ------------ | ----------------------- |
+| `extension.js`     | 2,650,012 | 907   | 156,328      | 166,985 lines (~10s)    |
+| `webview/index.js` | 4,813,035 | 2,057 | 259,833      | 306,299 lines (~15s)    |
+
+Both `node --check` valid, both `String Array: no`. Note the UI lives in the
+**webview** bundle — see Step 2 of the parent skill before picking a target.
 
 ## Fingerprint
 

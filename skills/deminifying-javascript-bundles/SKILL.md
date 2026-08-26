@@ -1,6 +1,6 @@
 ---
 name: deminifying-javascript-bundles
-description: Use when reading, auditing, or reverse-engineering a minified, bundled, or obfuscated JavaScript file — VSCode extension extension.js, dist bundles, vendor.js, or any single-file build with very long lines — especially when a read attempt hung, was killed, or blew the context window
+description: Use when reading, auditing, or reverse-engineering a minified, bundled, or obfuscated JavaScript file — VSCode extension bundles, webview bundles, dist output, vendor.js, or any single-file build with very long lines — especially when a read attempt hung, was killed, or blew the context window, or when verifying a change landed in built output
 license: Apache-2.0
 ---
 
@@ -36,14 +36,44 @@ ls ~/.npm/_npx 2>/dev/null | head        # cached packages if offline
 
 | Result                                                     | Plan                                         |
 | ---------------------------------------------------------- | -------------------------------------------- |
-| node + registry                                            | Full pipeline (Step 4). Best outcome.        |
+| node + registry                                            | Full pipeline (Step 5). Best outcome.        |
 | node, no registry, but `~/.npm/_npx` has webcrack/prettier | Full pipeline offline via `npx --no-install` |
-| node, no registry, no cache                                | Grep-only (Step 3). Still effective.         |
+| node, no registry, no cache                                | Grep-only (Step 4). Still effective.         |
 | no node                                                    | Grep-only. Python `str.find` for slicing.    |
 
 Do not `npm install -g`. Use `npx --yes <tool>` — no environment mutation.
 
-## Step 2: Measure and fingerprint
+## Step 2: Pick the right bundle first
+
+**A package usually ships more than one bundle, and the entry point is rarely the
+one you want.** Confirm the target holds the code you are hunting before spending
+a beautify cycle on it.
+
+```bash
+find "$PKG" -name "*.js" -size +100k | head       # every large bundle
+du -sh "$PKG"/*                                   # where the weight actually is
+```
+
+For a VSCode extension, `extension.js` is the **extension host** bundle —
+activation, commands, and node APIs. Any React/webview UI lives in a _separate_
+bundle it points at. Cheap discriminator:
+
+```bash
+grep -c "useState\|createElement" bundle.js   # ~0 = no UI here, wrong file
+```
+
+If that returns near zero and you are looking for UI, find the real one:
+
+```bash
+grep -n "joinPath\|asWebviewUri" extension.js | grep -o '"[a-z]*", *"[a-z.]*js"'
+```
+
+Measured cost of skipping this step: a full webcrack+prettier cycle on a 2.65 MB
+`extension.js` that contained no UI at all (`useState: 0`, `createElement: 2`).
+The meter being hunted was in a separate 4.8 MB `webview/index.js`. One `grep -c`
+would have redirected the entire effort.
+
+## Step 3: Measure and fingerprint
 
 Never modify the original. Work on a copy, always.
 
@@ -72,9 +102,9 @@ grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
 | `var X=Object.create;var{getPrototypeOf:...}=Object` prologue, zero `^// ` | [stacks/esbuild-minify.md](stacks/esbuild-minify.md) — **tested**                       |
 | `__webpack_require__`, numeric module map                                  | [stacks/webpack.md](stacks/webpack.md) — untested                                       |
 | Large string array + index-shuffle function at top                         | [stacks/javascript-obfuscator.md](stacks/javascript-obfuscator.md) — untested           |
-| Long lines, none of the above                                              | Generic: Step 3, then Step 4                                                            |
+| Long lines, none of the above                                              | Generic: Step 4, then Step 5                                                            |
 
-## Step 3: Extract without beautifying
+## Step 4: Extract without beautifying
 
 **This is the highest-yield step, and it often ends the task.** Do it before beautifying.
 
@@ -108,7 +138,7 @@ while (i := s.find('sandbox', i)) != -1:
 
 `grep -F` (fixed-string) and `grep -c` are safe. Variable-width `-oE` context windows are not.
 
-## Step 4: Multi-pass beautify
+## Step 5: Multi-pass beautify
 
 Beautify when you need **line numbers to cite**, repeated navigation, or control-flow reading. Each pass recovers something the next cannot.
 
@@ -139,11 +169,11 @@ Measured head-to-head, same question, same bundle, minified vs. beautified:
 | Backtracking hazard  | hit, killed       | none       |
 | Citable line numbers | no (byte offsets) | yes        |
 
-**Beautifying does not meaningfully reduce token cost.** It buys addressability, speed, and hazard removal. If you only need one fact, Step 3 alone is often enough — beautifying is a supporting move, not the main one.
+**Beautifying does not meaningfully reduce token cost.** It buys addressability, speed, and hazard removal. If you only need one fact, Step 4 alone is often enough — beautifying is a supporting move, not the main one.
 
 **Known cost:** webcrack may duplicate modules. On the reference bundle it emitted two near-identical copies of several modules, so grep hit counts doubled. Line growth is partly inflation, not pure recovery. Verify a hit is unique before treating it as the only definition.
 
-## Step 5: Read in bounded chunks
+## Step 6: Read in bounded chunks
 
 Never read the beautified file whole either — it is _larger_ than the original.
 
@@ -153,6 +183,27 @@ sed -n '139700,139780p' pass2.js           # read a window
 ```
 
 Keep windows to ~100–500 lines. Widen only on a specific hit.
+
+## Verifying a change reached built output
+
+The same techniques confirm your own build shipped what you think it did. Never
+trust an installer's success message — grep the bundle.
+
+**Search for constants, not source patterns.** Minification rewrites syntax but
+preserves numeric and string literals verbatim. A template literal like
+`` `M ${x} A ${r} ${r} 0 ...` `` leaves **no** searchable `"A 5 5 0"` in the
+output — that check returns zero on a correct build. The constants inside the
+expression (`170*(1-`, `70+30*`) survive and do confirm it.
+
+**Pair a positive check with a negative one.** New string present proves the code
+exists; old string _absent_ proves the bundle actually got replaced rather than a
+stale artifact being reinstalled.
+
+```bash
+unzip -o -q built.vsix "extension/gui/assets/index.js" -d /tmp/check
+grep -c -F "new string"  /tmp/check/extension/gui/assets/index.js   # want >0
+grep -c -F "old string"  /tmp/check/extension/gui/assets/index.js   # want 0
+```
 
 ## Quick Reference
 
@@ -167,17 +218,19 @@ Keep windows to ~100–500 lines. Widen only on a specific hit.
 
 ## Common Mistakes
 
-| Mistake                            | Reality                                                                |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| `head -300` on a bundle            | Counts lines. 300 lines can be 2 MB. Blows context.                    |
-| `grep -oE '.{200}X.{400}'`         | Catastrophic backtracking on long lines. Use Python.                   |
-| Unbounded `grep -n`                | Can dump megabytes. Always `-c` first, then `\| head`.                 |
-| Chasing mangled identifiers        | `Nkt`/`USt` are dead ends. Hunt strings.                               |
-| Beautifying first                  | Step 3 often answers the question at a fraction of the cost.           |
-| Trusting line-count growth         | webcrack can duplicate modules. Growth ≠ pure recovery.                |
-| Skipping `node --check`            | A broken transform silently produces plausible nonsense.               |
-| Editing the original               | Always copy first.                                                     |
-| Assuming module boundaries survive | `--minify` strips `// node_modules/...`. Verify with `grep -c "^// "`. |
+| Mistake                                 | Reality                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| `head -300` on a bundle                 | Counts lines. 300 lines can be 2 MB. Blows context.                    |
+| `grep -oE '.{200}X.{400}'`              | Catastrophic backtracking on long lines. Use Python.                   |
+| Unbounded `grep -n`                     | Can dump megabytes. Always `-c` first, then `\| head`.                 |
+| Chasing mangled identifiers             | `Nkt`/`USt` are dead ends. Hunt strings.                               |
+| Beautifying first                       | Step 4 often answers the question at a fraction of the cost.           |
+| Trusting line-count growth              | webcrack can duplicate modules. Growth ≠ pure recovery.                |
+| Skipping `node --check`                 | A broken transform silently produces plausible nonsense.               |
+| Editing the original                    | Always copy first.                                                     |
+| Assuming module boundaries survive      | `--minify` strips `// node_modules/...`. Verify with `grep -c "^// "`. |
+| Assuming the entry point is the UI      | `extension.js` is the host bundle. Check `grep -c "useState"` first.   |
+| Grepping built output by source pattern | Template literals leave no literal to match. Search constants.         |
 
 ## Scope Limits
 
