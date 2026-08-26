@@ -74,6 +74,34 @@ function filterMultipleEditToolCalls(
  * @param message - The chat message containing tool calls to process
  * @param lastItem - The chat history item to attach tool call states to
  */
+/**
+ * Mark the most recent still-open reasoning span as finished.
+ *
+ * Reasoning reaches us two ways: `<think>` tags inside assistant content, and
+ * a dedicated `reasoning_content` field that becomes its own thinking-role
+ * item. The `<think>` path is self-terminating (`</think>` closes it), but the
+ * structured path has no terminator in the stream — reasoning simply stops and
+ * the next message begins. Without this, `active` stays true and `endAt` is
+ * never set, so the block cannot report a duration.
+ */
+export function closeOpenReasoning(
+  history: ChatHistoryItemWithMessageId[],
+): void {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const reasoning = history[i].reasoning;
+    if (reasoning?.active) {
+      reasoning.active = false;
+      reasoning.endAt = Date.now();
+      return;
+    }
+    // Only the trailing run of thinking items can hold an open span; stop at
+    // the first non-thinking item so we never reopen an older turn.
+    if (history[i].message.role !== "thinking") {
+      return;
+    }
+  }
+}
+
 export function handleToolCallsInMessage(
   message: ChatMessage,
   lastItem: ChatHistoryItemWithMessageId,
@@ -593,6 +621,12 @@ export const sessionSlice = createSlice({
             lastMessage.role !== message.role ||
             message.role === "tool" // Tool messages should always create new messages
           ) {
+            // A role change ends any open reasoning span: either reasoning
+            // stopped and real output began, or a new thinking item starts.
+            // Close the previous one so its duration is recorded rather than
+            // left dangling (which renders as a timerless, ambiguous block).
+            closeOpenReasoning(state.history);
+
             // Create a new message
             const historyItem: ChatHistoryItemWithMessageId = {
               message: {
@@ -602,6 +636,18 @@ export const sessionSlice = createSlice({
               },
               contextItems: [],
             };
+            // Structured reasoning (`reasoning_content`) arrives as its own
+            // thinking-role item rather than as `<think>` tags inside content,
+            // so it never passes through the `lastItem.reasoning` branches
+            // below. Give it the same timing metadata those branches produce,
+            // so both paths render through one identically-behaved block.
+            if (message.role === "thinking") {
+              historyItem.reasoning = {
+                text: "",
+                startAt: Date.now(),
+                active: true,
+              };
+            }
             state.history.push(historyItem);
             lastItem = state.history[state.history.length - 1];
             lastMessage = lastItem.message;
@@ -609,7 +655,19 @@ export const sessionSlice = createSlice({
 
           // Add to the existing message
           if (messageContent) {
-            if (messageContent.includes("<think>") && message.role !== "tool") {
+            if (message.role === "thinking") {
+              // Structured reasoning: keep the message content authoritative
+              // (that is what the thinking block renders) and mirror it into
+              // `reasoning.text` so duration and the shared block's
+              // in-progress state work exactly as on the `<think>` path.
+              lastMessage.content += messageContent;
+              if (lastItem.reasoning) {
+                lastItem.reasoning.text = renderChatMessage(lastMessage);
+              }
+            } else if (
+              messageContent.includes("<think>") &&
+              message.role !== "tool"
+            ) {
               lastItem.reasoning = {
                 startAt: Date.now(),
                 active: true,

@@ -6,6 +6,7 @@ import { useAppSelector } from "../../redux/hooks";
 import { selectUIConfig } from "../../redux/slices/configSlice";
 import { deleteMessage } from "../../redux/slices/sessionSlice";
 import ThinkingBlockPeek from "../mainInput/belowMainInput/ThinkingBlockPeek";
+import { reasoningElapsedMs } from "../../util/reasoningDuration";
 import StyledMarkdownPreview from "../StyledMarkdownPreview";
 import ConversationSummary from "./ConversationSummary";
 import ResponseActions from "./ResponseActions";
@@ -91,6 +92,7 @@ export default function StepContainer(props: StepContainerProps) {
                 index={props.index}
                 prevItem={props.index > 0 ? props.item : null}
                 inProgress={!props.item.reasoning?.endAt}
+                elapsedMs={reasoningElapsedMs(props.item)}
               />
             )}
 

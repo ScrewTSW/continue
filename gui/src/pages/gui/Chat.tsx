@@ -54,6 +54,7 @@ import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import { RootState } from "../../redux/store";
 import { cancelStream } from "../../redux/thunks/cancelStream";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
+import { reasoningElapsedMs } from "../../util/reasoningDuration";
 import { EmptyChatBody } from "./EmptyChatBody";
 import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
 import { useAutoScroll } from "./useAutoScroll";
@@ -342,7 +343,17 @@ export function Chat() {
 
       if (message.role === "thinking") {
         const thinkingContent = renderChatMessage(message);
-        if (!thinkingContent?.trim()) {
+        // Only skip when there is genuinely nothing to show AND nothing is
+        // still arriving. Returning null for an item that is mid-stream (or
+        // that carries redacted reasoning) silently swallows the model's
+        // response and leaves a gap between tool calls with no explanation.
+        const isLast = index === history.length - 1;
+        const stillStreaming = isLast && isStreaming;
+        if (
+          !thinkingContent?.trim() &&
+          !message.redactedThinking &&
+          !stillStreaming
+        ) {
           return null;
         }
         return (
@@ -352,7 +363,14 @@ export function Chat() {
               redactedThinking={message.redactedThinking}
               index={index}
               prevItem={index > 0 ? history[index - 1] : null}
-              inProgress={index === history.length - 1 && isStreaming}
+              // A thinking item stops being last as soon as the following
+              // tool-call/assistant item is appended, which with structured
+              // reasoning happens immediately. Drive in-progress from the
+              // reasoning span itself so the block still reports a duration.
+              inProgress={
+                item.reasoning ? item.reasoning.active : stillStreaming
+              }
+              elapsedMs={reasoningElapsedMs(item)}
               signature={message.signature}
             />
           </div>
