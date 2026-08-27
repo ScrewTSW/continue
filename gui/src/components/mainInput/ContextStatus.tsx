@@ -6,7 +6,10 @@ import { ToolTip } from "../gui/Tooltip";
 
 const SIZE = 20;
 const CENTER = SIZE / 2;
-const RADIUS = 5;
+const STROKE = 2.5;
+// Fill the viewBox out to the stroke edge so the meter reads at the same
+// visual size as the h-3 w-3 heroicons beside it, which paint their full box.
+const RADIUS = (SIZE - STROKE) / 2;
 
 function pointOnCircle(percent: number): [number, number] {
   const angle = (percent / 100) * 2 * Math.PI;
@@ -48,7 +51,9 @@ function usageColor(percent: number): string {
   const hue = 170 * (1 - t) ** 1.5;
   const saturation = 70 + 30 * t;
   const lightness = 45 + 10 * t ** 2;
-  return `hsl(${hue.toFixed(1)} ${saturation.toFixed(1)}% ${lightness.toFixed(1)}%)`;
+  // Comma-separated form: VS Code webviews can run on older Chromium where the
+  // space-separated syntax fails to parse and the stroke silently loses color.
+  return `hsl(${hue.toFixed(1)}, ${saturation.toFixed(1)}%, ${lightness.toFixed(1)}%)`;
 }
 
 const ContextStatus = () => {
@@ -147,23 +152,27 @@ const ContextStatus = () => {
         role="img"
         aria-label={`${remaining}% of context remaining`}
       >
-        {/* Remaining context: dark, sweeping back to 12 o'clock. */}
-        {remaining > 0 && (
-          <path
-            d={describeArc(percent, 100)}
-            stroke="#1a1a1a"
-            strokeOpacity="0.85"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        )}
-        {/* Used context: blue-green through red. */}
+        {/* Unfilled track: a full ring, always drawn. Using a circle rather
+            than an arc keeps it visible at every percentage and gives the
+            meter a stable outline, so a nearly-empty context still reads as
+            a ring with a small mark at 12 o'clock instead of a stray dot. */}
+        <circle
+          cx={CENTER}
+          cy={CENTER}
+          r={RADIUS}
+          stroke="currentColor"
+          strokeOpacity="0.3"
+          strokeWidth={STROKE}
+        />
+        {/* Used context: blue-green through red, clockwise from 12 o'clock.
+            Butt caps - round ones add a half-stroke blob at each end, which
+            at low percentages is several times longer than the arc itself. */}
         {percent > 0 && (
           <path
             d={describeArc(0, percent)}
             stroke={usageColor(percent)}
-            strokeWidth="1.5"
-            strokeLinecap="round"
+            strokeWidth={STROKE}
+            strokeLinecap="butt"
           />
         )}
       </svg>
