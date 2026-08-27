@@ -20,6 +20,7 @@ import { AsyncEncoder, LlamaAsyncEncoder } from "./asyncEncoder.js";
 import { DEFAULT_PRUNING_LENGTH } from "./constants.js";
 import { getAdjustedTokenCountFromModel } from "./getAdjustedTokenCount.js";
 import llamaTokenizer from "./llamaTokenizer.js";
+import { withCachedMessageTokens } from "./tokenCountCache.js";
 interface Encoding {
   encode: Tiktoken["encode"];
   decode: Tiktoken["decode"];
@@ -177,6 +178,19 @@ function countToolsTokens(tools: Tool[], modelName: string): number {
 }
 
 function countChatMessageTokens(
+  modelName: string,
+  chatMessage: ChatMessage,
+): number {
+  // Memoised: this is a pure function of (modelName, chatMessage), and the
+  // compiler calls it for every message on every request. Without the cache a
+  // long session re-tokenises its whole history each turn, blocking the
+  // extension host for seconds. See tokenCountCache.ts.
+  return withCachedMessageTokens(modelName, chatMessage, () =>
+    computeChatMessageTokens(modelName, chatMessage),
+  );
+}
+
+function computeChatMessageTokens(
   modelName: string,
   chatMessage: ChatMessage,
 ): number {
