@@ -39,8 +39,11 @@ let misses = 0;
  * ~0.66ms for 1MB versus ~3187ms to tokenize the same text - so it does not
  * erode the win.
  *
- * SHA-256 collisions are not a practical concern at this cache size, and a
- * collision would only mis-count tokens, not corrupt output.
+ * SHA-256 collisions are not a practical concern at this cache size. They are
+ * not harmless, though: a wrong count feeds the pruning loop in
+ * `compileChatMessages`, so it can drop a message that would have fit or let an
+ * over-long prompt through. The argument is that the probability is negligible,
+ * not that the consequence is.
  *
  * Only the fields `countChatMessageTokens` actually counts are included.
  */
