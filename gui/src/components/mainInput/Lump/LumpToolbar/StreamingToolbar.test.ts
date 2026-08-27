@@ -137,6 +137,42 @@ describe("derivePhaseLabel", () => {
     });
   });
 
+  /**
+   * Before any request is sent, the GUI blocks on `llm/compileChat`, which
+   * tokenizes the whole conversation on the extension host. For a long session
+   * that is seconds of dead air during which no `x_progress` can exist, because
+   * no request has been made yet. Reporting "Working" there was indistinguishable
+   * from a stalled stream.
+   */
+  describe("pre-flight tokenization", () => {
+    it("reports tokenization while the pre-flight compile is running", () => {
+      expect(derivePhaseLabel(undefined, true)).toBe("Tokenizing");
+    });
+
+    it("outranks the neutral fallback, which cannot distinguish this case", () => {
+      expect(derivePhaseLabel(null, true)).toBe("Tokenizing");
+    });
+
+    it("stops claiming tokenization once the compile finishes", () => {
+      expect(derivePhaseLabel(undefined, false)).toBe("Working");
+    });
+
+    it("never masks a real phase from the wire", () => {
+      // If frames somehow arrive while the flag is still set, the wire wins:
+      // it is direct evidence, the flag is only an inference.
+      expect(derivePhaseLabel(loadingFrame(2), true)).toBe("Loading model");
+      expect(derivePhaseLabel(evalFrame(0, 12800), true)).toBe(
+        "Reading prompt",
+      );
+      expect(derivePhaseLabel(streamFrame(5), true)).toBe("Generating");
+    });
+
+    it("defaults to not tokenizing when the flag is omitted", () => {
+      // Keeps every existing call site behaving exactly as before.
+      expect(derivePhaseLabel(undefined)).toBe("Working");
+    });
+  });
+
   describe("the full request lifecycle", () => {
     it("moves load -> read -> generate without claiming generation early", () => {
       // A cold-start request as the orchestrator actually emits it: keepalive
@@ -150,7 +186,9 @@ describe("derivePhaseLabel", () => {
         streamFrame(70, 30.7),
       ];
 
-      expect(timeline.map(derivePhaseLabel)).toEqual([
+      // Called explicitly rather than point-free: `map` passes the index as the
+      // second argument, which would land in `isTokenizing`.
+      expect(timeline.map((frame) => derivePhaseLabel(frame))).toEqual([
         "Loading model",
         "Loading model",
         "Reading prompt",
