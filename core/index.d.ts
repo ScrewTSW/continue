@@ -416,6 +416,20 @@ export interface XProgress {
   tok_s: number;
   ctx_size: number;
   ctx_used: number;
+  /**
+   * Phase of the in-flight request. The orchestrator emits these before any
+   * token is generated, so the toolbar can distinguish a cold model load and
+   * prompt evaluation from actual generation:
+   *
+   * - `loading` - the model is being loaded into VRAM (keepalive_loop)
+   * - `state` - "prompt eval" or "generating" (prompt_eval_loop)
+   * - `prompt_total` - estimated prompt tokens, denominator for eval progress
+   *
+   * All optional: only the orchestrator sends them, and only in some phases.
+   */
+  loading?: boolean;
+  state?: "prompt eval" | "generating";
+  prompt_total?: number;
 }
 
 /** Well-known keys carried in {@link ChatMessage} `metadata`. */
