@@ -152,10 +152,17 @@ const ContextStatus = () => {
         role="img"
         aria-label={`${remaining}% of context remaining`}
       >
-        {/* Unfilled track: a full ring, always drawn. Using a circle rather
-            than an arc keeps it visible at every percentage and gives the
-            meter a stable outline, so a nearly-empty context still reads as
-            a ring with a small mark at 12 o'clock instead of a stray dot. */}
+        {/* Unfilled track: a full ring, always drawn.
+
+            This started as a complementary arc from `percent` to 100, which is
+            geometrically equivalent wherever both are visible - the used arc
+            covers the rest of the ring. A full circle is used instead because
+            it degrades better at the edges: the arc form vanished entirely at
+            100% and, at low percentages, its round caps produced a blob larger
+            than the arc itself, leaving a dot with no sense of where zero was.
+            The ring gives a stable outline at every percentage, so an empty
+            context reads as a ring with a mark at 12 o'clock. Any change back
+            to an arc needs to keep the track visible at 0% and 100%. */}
         <circle
           cx={CENTER}
           cy={CENTER}
