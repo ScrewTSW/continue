@@ -1,3 +1,4 @@
+import type { XProgress } from "core";
 import { useEffect, useRef, useState } from "react";
 import { useAppSelector } from "../../../../redux/hooks";
 import {
@@ -126,6 +127,9 @@ export function ProgressLabels() {
   if (!xProgress && elapsed <= 0) return null;
 
   const parts: string[] = [];
+  // Still `any`: the hardware fields below (vram_*, ram_*, gpu_*, cpu_*,
+  // cached) are orchestrator extensions not yet on XProgress. The phase
+  // fields it reads - loading/state/prompt_total - are typed now.
   const p = (xProgress as any) || {};
 
   if (elapsed > 0) {
@@ -189,16 +193,43 @@ interface StreamingToolbarProps {
   displayText?: string;
 }
 
+/**
+ * The headline verb for the current phase.
+ *
+ * "Generating" has to be earned: the orchestrator reports a cold model load and
+ * prompt evaluation before any token exists, and claiming generation through
+ * those phases is what made the old hard-coded label wrong. Order matters -
+ * `loading` outranks `state`, because a cold load emits both.
+ *
+ * When no phase information arrives at all we say "Working" rather than
+ * assuming generation. Providers other than the orchestrator send no
+ * `x_progress`, and a stream that has produced no tokens yet is not generating.
+ * Once tokens appear (`gen > 0`) that is direct evidence, whatever the
+ * provider.
+ */
+export function derivePhaseLabel(
+  xProgress: XProgress | null | undefined,
+): string {
+  if (!xProgress) return "Working";
+  if (xProgress.loading) return "Loading model";
+  if (xProgress.state === "prompt eval") return "Reading prompt";
+  if (xProgress.state === "generating") return "Generating";
+  if ((xProgress.gen ?? 0) > 0) return "Generating";
+  return "Working";
+}
+
 export function StreamingToolbar({
   onStop,
   displayText = "Stop",
 }: StreamingToolbarProps) {
   const jetbrains = isJetBrains();
+  const xProgress = useAppSelector((state) => state.session.xProgress);
+  const phaseLabel = derivePhaseLabel(xProgress);
 
   return (
     <div className="flex w-full items-center justify-between">
       <div className="flex items-center">
-        <GeneratingIndicator />
+        <GeneratingIndicator text={phaseLabel} />
         <ProgressLabels />
         <ModelStateLabel />
       </div>
