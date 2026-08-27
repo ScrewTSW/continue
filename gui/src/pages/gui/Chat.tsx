@@ -83,6 +83,12 @@ const StepsDiv = styled.div`
 
 export const MAIN_EDITOR_INPUT_ID = "main-editor-input";
 
+// Disabled: the feedback solicitation dialog is kept in the tree (see
+// components/dialogs/FeedbackDialog.tsx) but never shown. Flip to true to
+// re-enable, or repurpose the dialog and point this at it.
+const SHOW_FEEDBACK_DIALOG = false;
+const FEEDBACK_DIALOG_AT_ENTRY = 300;
+
 function fallbackRender({ error, resetErrorBoundary }: any) {
   // Call resetErrorBoundary() to reset the error boundary and retry the render.
 
@@ -219,7 +225,7 @@ export function Chat() {
       const currentCount = getLocalStorage("mainTextEntryCounter");
       if (currentCount) {
         setLocalStorage("mainTextEntryCounter", currentCount + 1);
-        if (currentCount === 300) {
+        if (SHOW_FEEDBACK_DIALOG && currentCount === FEEDBACK_DIALOG_AT_ENTRY) {
           dispatch(setDialogMessage(<FeedbackDialog />));
           dispatch(setShowDialog(true));
         }
