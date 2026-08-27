@@ -142,13 +142,15 @@ const ContextStatus = () => {
         </div>
       }
     >
+      {/* Sized by class, not by width/height attributes, so it matches the
+          h-3 w-3 heroicons sharing this row (AtSymbolIcon, PhotoIcon). Fixed
+          attributes sat outside Tailwind's sizing and left the meter visibly
+          off against its neighbours. */}
       <svg
-        width="12"
-        height="12"
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="block"
+        className="h-3 w-3 shrink-0"
         role="img"
         aria-label={`${remaining}% of context remaining`}
       >
