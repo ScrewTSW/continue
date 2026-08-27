@@ -51,10 +51,18 @@ function cacheKey(modelName: string, message: ChatMessage): string {
   if (typeof content === "string") {
     parts.push(content);
   } else if (Array.isArray(content)) {
-    // Image parts contribute a flat token count, so their presence matters but
-    // their payload does not - avoid keying on base64 blobs.
     for (const part of content) {
-      parts.push(part.type === "text" ? `t:${part.text}` : `i:${part.type}`);
+      // `stripImages` collects text parts with `.join("\n")`, which renders an
+      // absent `text` as "" - so the key must too. Interpolating it instead
+      // would produce "undefined" and collide with a part whose text is
+      // literally "undefined", serving one the other's count.
+      if (part.type === "text") {
+        parts.push("t:", part.text ?? "");
+      } else {
+        // Image parts contribute a flat token count, so their presence matters
+        // but their payload does not - avoid keying on base64 blobs.
+        parts.push("i:", part.type);
+      }
     }
   }
 

@@ -108,6 +108,53 @@ describe("tokenCountCache", () => {
   // (a 1MB message x 4096 is ~4 GiB) long after the conversation is released.
   // Keys are fixed-size digests so worst-case memory is a function of the cap
   // alone, and raw prompt/tool text is not retained by the cache.
+  // `stripImages` joins text parts with `.join("\n")`, which renders an absent
+  // `text` as "". A key that interpolates `part.text` instead produces
+  // "undefined", so a part with no text and a part whose text is literally
+  // "undefined" share a key - and one is served the other's count.
+  it("separates a text part with absent text from the literal string 'undefined'", () => {
+    const part = (text?: string): ChatMessage =>
+      ({
+        role: "user",
+        content: [
+          text === undefined ? { type: "text" } : { type: "text", text },
+        ],
+      }) as unknown as ChatMessage;
+
+    expect(withCachedMessageTokens("m", part(undefined), () => 1)).toBe(1);
+    expect(withCachedMessageTokens("m", part("undefined"), () => 2)).toBe(2);
+
+    // And each keeps its own count on the way back out.
+    expect(withCachedMessageTokens("m", part(undefined), () => 99)).toBe(1);
+    expect(withCachedMessageTokens("m", part("undefined"), () => 99)).toBe(2);
+  });
+
+  // Absent text and empty-string text DO normalize together, matching
+  // `stripImages` - they tokenize identically, so sharing a key is correct.
+  it("treats absent text and empty text as the same message", () => {
+    const absent = {
+      role: "user",
+      content: [{ type: "text" }],
+    } as unknown as ChatMessage;
+    const empty = {
+      role: "user",
+      content: [{ type: "text", text: "" }],
+    } as unknown as ChatMessage;
+
+    let calls = 0;
+    withCachedMessageTokens("m", absent, () => {
+      calls++;
+      return 5;
+    });
+    expect(
+      withCachedMessageTokens("m", empty, () => {
+        calls++;
+        return 6;
+      }),
+    ).toBe(5);
+    expect(calls).toBe(1);
+  });
+
   it("stores fixed-size keys regardless of message size", () => {
     const small = msg("x");
     const huge = msg("y".repeat(2 * 1024 * 1024));
