@@ -15,6 +15,7 @@ import {
   setInactive,
   setInlineErrorMessage,
   setIsPruned,
+  setIsTokenizing,
   setToolGenerated,
   streamUpdate,
 } from "../slices/sessionSlice";
@@ -172,10 +173,22 @@ export const streamNormalInput = createAsyncThunk<
     dispatch(setActive());
     dispatch(setInlineErrorMessage(undefined));
 
-    const precompiledRes = await extra.ideMessenger.request("llm/compileChat", {
-      messages,
-      options: completionOptions,
-    });
+    // Compiling tokenizes the whole conversation on the extension host, which
+    // for a long session blocks for seconds before any request is sent. No
+    // `x_progress` can exist during that window, so flag it explicitly rather
+    // than letting the toolbar fall back to a generic label.
+    dispatch(setIsTokenizing(true));
+    let precompiledRes: Awaited<
+      ReturnType<typeof extra.ideMessenger.request<"llm/compileChat">>
+    >;
+    try {
+      precompiledRes = await extra.ideMessenger.request("llm/compileChat", {
+        messages,
+        options: completionOptions,
+      });
+    } finally {
+      dispatch(setIsTokenizing(false));
+    }
 
     if (precompiledRes.status === "error") {
       if (precompiledRes.error.includes("Not enough context")) {

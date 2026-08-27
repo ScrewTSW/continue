@@ -209,8 +209,11 @@ interface StreamingToolbarProps {
  */
 export function derivePhaseLabel(
   xProgress: XProgress | null | undefined,
+  isTokenizing = false,
 ): string {
-  if (!xProgress) return "Working";
+  // Wire evidence always wins over the pre-flight inference below: if frames
+  // are arriving, the request is already in flight whatever the flag says.
+  if (!xProgress) return isTokenizing ? "Tokenizing" : "Working";
   if (xProgress.loading) return "Loading model";
   if (xProgress.state === "prompt eval") return "Reading prompt";
   if (xProgress.state === "generating") return "Generating";
@@ -224,7 +227,8 @@ export function StreamingToolbar({
 }: StreamingToolbarProps) {
   const jetbrains = isJetBrains();
   const xProgress = useAppSelector((state) => state.session.xProgress);
-  const phaseLabel = derivePhaseLabel(xProgress);
+  const isTokenizing = useAppSelector((state) => state.session.isTokenizing);
+  const phaseLabel = derivePhaseLabel(xProgress, isTokenizing);
 
   return (
     <div className="flex w-full items-center justify-between">

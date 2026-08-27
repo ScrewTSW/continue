@@ -262,6 +262,12 @@ type SessionState = {
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
   xProgress?: XProgress | null;
+  /**
+   * True while the pre-flight `llm/compileChat` call is in flight - the
+   * conversation is being tokenized on the extension host and no request has
+   * been sent yet, so no `x_progress` can exist to describe the wait.
+   */
+  isTokenizing?: boolean;
 };
 
 export const INITIAL_SESSION_STATE: SessionState = {
@@ -283,6 +289,7 @@ export const INITIAL_SESSION_STATE: SessionState = {
   newestToolbarPreviewForInput: {},
   compactionLoading: {},
   xProgress: null,
+  isTokenizing: false,
 };
 
 export const sessionSlice = createSlice({
@@ -313,6 +320,9 @@ export const sessionSlice = createSlice({
     setActive: (state) => {
       state.isStreaming = true;
       state.xProgress = null;
+    },
+    setIsTokenizing: (state, { payload }: PayloadAction<boolean>) => {
+      state.isTokenizing = payload;
     },
     setIsGatheringContext: (state, { payload }: PayloadAction<boolean>) => {
       const curMessage = state.history.at(-1);
@@ -564,6 +574,9 @@ export const sessionSlice = createSlice({
       closeOpenReasoning(state.history);
 
       state.isStreaming = false;
+      // Also cleared here, not just on the compile's happy path: an aborted or
+      // failed request must not leave the toolbar claiming "Tokenizing".
+      state.isTokenizing = false;
     },
     abortStream: (state) => {
       state.streamAborter.abort();
@@ -1165,6 +1178,7 @@ export const {
   addHighlightedCode,
   addPromptCompletionPair,
   setActive,
+  setIsTokenizing,
   submitEditorAndInitAtIndex,
   truncateHistoryToMessage,
   updateHistoryItemAtIndex,
