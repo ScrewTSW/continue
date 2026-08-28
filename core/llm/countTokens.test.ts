@@ -182,6 +182,88 @@ describe.skip("compileChatMessages", () => {
   });
 });
 
+describe("compileChatMessages contextPercentage", () => {
+  // The meter renders this ratio directly as a fraction of a circle, so a
+  // value above 1 draws an arc past a full sweep.
+  //
+  // Scope, honestly: these tests pin the range invariant, but they do NOT
+  // fail if the clamp is removed. A grid search over context lengths, max
+  // token counts, and conversation sizes found no input that drives the raw
+  // ratio above 1 - `compileChatMessages` throws on its
+  // `knownContextLength !== undefined && inputTokensAvailable < 0` guard
+  // whenever the window is too small, before the ratio is computed. The
+  // reported 786% came from a *wrong denominator* (the client configured
+  // 32768 against a server serving 288768), which this function cannot
+  // observe. Treat the clamp as defence in depth for that class of
+  // misconfiguration, and these as a guard on the contract rather than a
+  // regression test for the clamp itself.
+  //
+  // This block runs while the `compileChatMessages` block above is skipped,
+  // which looks inconsistent but is deliberate. Those tests are not skipped
+  // for an environment or encoder reason: they call the old positional
+  // signature - compileChatMessages("gpt-4", undefined, 100, 50, false) - and
+  // fail with "Cannot read properties of undefined (reading 'map')" because
+  // `msgs` arrives undefined. They are stale against the options-object API,
+  // not flaky. These use the current signature and pass deterministically.
+
+  const compile = (
+    overrides: Partial<Parameters<typeof compileChatMessages>[0]> = {},
+  ) =>
+    compileChatMessages({
+      modelName: "gpt-4",
+      msgs: [{ role: "user", content: "Hello world!" }],
+      knownContextLength: 4096,
+      maxTokens: 1024,
+      supportsImages: false,
+      ...overrides,
+    });
+
+  it("reports a fraction between 0 and 1 for an ordinary request", () => {
+    const { contextPercentage } = compile();
+    expect(contextPercentage).toBeGreaterThan(0);
+    expect(contextPercentage).toBeLessThanOrEqual(1);
+  });
+
+  it("stays within range on a window barely large enough to compile", () => {
+    // availableTokens = ctx - min(1000, ctx*0.02) - min(1000, maxTokens).
+    // At 1100/1000 that leaves ~78 tokens, so a long conversation is pruned
+    // hard and inputTokens re-adds the system and last-message tokens after.
+    // This is the shape that produced the out-of-range ratio in practice.
+    const { contextPercentage } = compile({
+      knownContextLength: 1100,
+      maxTokens: 1000,
+      msgs: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "word ".repeat(400) },
+        { role: "assistant", content: "reply ".repeat(400) },
+        { role: "user", content: "and finally, a question?" },
+      ],
+    });
+    expect(contextPercentage).toBeGreaterThanOrEqual(0);
+    expect(contextPercentage).toBeLessThanOrEqual(1);
+  });
+
+  it("throws rather than reporting a ratio when the window cannot fit output", () => {
+    // The `availableTokens > 0` guard in the ratio is defence in depth: with a
+    // known context length, compileChatMessages throws on its
+    // `inputTokensAvailable < 0` guard before it can be reached
+    // (1020 - 20.4 - 1000 < 0). Pinning that here so the guard is not mistaken
+    // for the reachable path and "simplified" away.
+    expect(() =>
+      compile({ knownContextLength: 1020, maxTokens: 1000 }),
+    ).toThrow(/Not enough context available/);
+  });
+
+  it("never reports a negative or non-finite fraction", () => {
+    for (const knownContextLength of [1100, 1500, 4096, 32768]) {
+      const { contextPercentage } = compile({ knownContextLength });
+      expect(Number.isFinite(contextPercentage)).toBe(true);
+      expect(contextPercentage).toBeGreaterThanOrEqual(0);
+      expect(contextPercentage).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 describe("extractToolSequence", () => {
   // Helper function to create mock messages
   const createUserMessage = (content: string): ChatMessage => ({
