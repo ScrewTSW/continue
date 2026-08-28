@@ -189,13 +189,22 @@ describe("compileChatMessages contextPercentage", () => {
   // Scope, honestly: these tests pin the range invariant, but they do NOT
   // fail if the clamp is removed. A grid search over context lengths, max
   // token counts, and conversation sizes found no input that drives the raw
-  // ratio above 1 - `compileChatMessages` throws at countTokens.ts:497
+  // ratio above 1 - `compileChatMessages` throws on its
+  // `knownContextLength !== undefined && inputTokensAvailable < 0` guard
   // whenever the window is too small, before the ratio is computed. The
   // reported 786% came from a *wrong denominator* (the client configured
   // 32768 against a server serving 288768), which this function cannot
   // observe. Treat the clamp as defence in depth for that class of
   // misconfiguration, and these as a guard on the contract rather than a
   // regression test for the clamp itself.
+  //
+  // This block runs while the `compileChatMessages` block above is skipped,
+  // which looks inconsistent but is deliberate. Those tests are not skipped
+  // for an environment or encoder reason: they call the old positional
+  // signature - compileChatMessages("gpt-4", undefined, 100, 50, false) - and
+  // fail with "Cannot read properties of undefined (reading 'map')" because
+  // `msgs` arrives undefined. They are stale against the options-object API,
+  // not flaky. These use the current signature and pass deterministically.
 
   const compile = (
     overrides: Partial<Parameters<typeof compileChatMessages>[0]> = {},
@@ -236,9 +245,10 @@ describe("compileChatMessages contextPercentage", () => {
 
   it("throws rather than reporting a ratio when the window cannot fit output", () => {
     // The `availableTokens > 0` guard in the ratio is defence in depth: with a
-    // known context length, compileChatMessages throws at countTokens.ts:497
-    // before it can be reached (1020 - 20.4 - 1000 < 0). Pinning that here so
-    // the guard is not mistaken for the reachable path and "simplified" away.
+    // known context length, compileChatMessages throws on its
+    // `inputTokensAvailable < 0` guard before it can be reached
+    // (1020 - 20.4 - 1000 < 0). Pinning that here so the guard is not mistaken
+    // for the reachable path and "simplified" away.
     expect(() =>
       compile({ knownContextLength: 1020, maxTokens: 1000 }),
     ).toThrow(/Not enough context available/);

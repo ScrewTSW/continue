@@ -97,6 +97,13 @@ function InputToolbar(props: InputToolbarProps) {
             </HoverItem>
           </ToolTip>
           <div className="xs:flex text-description -mb-1 hidden items-center transition-colors duration-200">
+            {/* Shares this container's `hidden xs:flex` gate, so the meter
+                disappears below 250px along with attach-image, attach-context
+                and the reasoning toggle. That is a deliberate change: it
+                previously sat in the right-hand group, whose other children
+                are gated at `sm:`/`md:`, so it was the last thing standing on
+                a very narrow sidebar. Exempting only the meter here would
+                leave a lone icon in an otherwise empty stack. */}
             {!isInEdit && (
               <HoverItem>
                 <ContextStatus />

@@ -157,14 +157,18 @@ const ContextStatus = () => {
         {/* Unfilled track: a full ring, always drawn.
 
             This started as a complementary arc from `percent` to 100, which is
-            geometrically equivalent wherever both are visible - the used arc
-            covers the rest of the ring. A full circle is used instead because
-            it degrades better at the edges: the arc form vanished entirely at
-            100% and, at low percentages, its round caps produced a blob larger
-            than the arc itself, leaving a dot with no sense of where zero was.
-            The ring gives a stable outline at every percentage, so an empty
-            context reads as a ring with a mark at 12 o'clock. Any change back
-            to an arc needs to keep the track visible at 0% and 100%. */}
+            geometrically equivalent - the used arc covers the rest of the
+            ring. It was replaced because that arc was hardcoded `#1a1a1a` at
+            0.85 opacity and proved invisible against a dark theme, not because
+            of its geometry. The ring inherits `currentColor` instead, so it
+            follows the theme like the icons beside it.
+
+            Keeping it as a full circle also gives a stable outline at every
+            percentage: at 0% the used arc is not rendered at all, so the ring
+            is the only thing drawn, and an empty context still reads as a
+            meter rather than as nothing. Any change back to an arc needs to
+            stay visible at 0% and 100%, and must not reintroduce a fixed
+            colour. */}
         <circle
           cx={CENTER}
           cy={CENTER}
