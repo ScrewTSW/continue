@@ -7,14 +7,19 @@ export interface RenderedHistoryItem<T> {
 }
 
 /**
- * History filtered to what is actually rendered, with each item's ORIGINAL
+ * History minus the items that are never mapped, with each item's ORIGINAL
  * index preserved.
  *
- * System items are never rendered. Using a positional index from the filtered
- * array would desynchronise it from `history`, which every consumer resolves
- * against — `isLastUserInput`, `sendInput`, `latestSummaryIndex`,
- * `historyIndex` and `stepsOpen`, as well as the `isLast` checks. Keeping the
- * original index is what lets all of them agree.
+ * Only `system` items are dropped here. `tool` items stay: `Chat.tsx` maps over
+ * them and returns null per item, and removing them from the list would change
+ * which items get mapped at all. They are excluded from *last* separately —
+ * see `getLastRenderedIndex`.
+ *
+ * Using a positional index from the filtered array would desynchronise it from
+ * `history`, which every consumer resolves against — `isLastUserInput`,
+ * `sendInput`, `latestSummaryIndex`, `historyIndex` and `stepsOpen`, as well as
+ * the `isLast` checks. Keeping the original index is what lets all of them
+ * agree.
  */
 export function getRenderedHistory<T extends Pick<ChatHistoryItem, "message">>(
   history: T[],
@@ -25,14 +30,24 @@ export function getRenderedHistory<T extends Pick<ChatHistoryItem, "message">>(
 }
 
 /**
- * Original index of the final rendered item, or -1 when nothing renders.
+ * Original index of the last item that actually paints, or -1 when none does.
  *
  * Compare an item's original index against this to decide whether it is last.
- * A trailing system item means the last *rendered* item is not the last item
- * in history, so `history.length - 1` is the wrong bound.
+ * `history.length - 1` is the wrong bound: a trailing `system` item is not in
+ * the list at all, and a trailing `tool` item is mapped but renders null
+ * (`Chat.tsx`), so either would point `isLast` at something invisible. A
+ * cancelled agent turn ends on a tool result, so this is not hypothetical.
+ *
+ * Scans back rather than taking the tail, since a turn can end on a run of
+ * several tool results.
  */
-export function getLastRenderedIndex(
-  rendered: RenderedHistoryItem<unknown>[],
-): number {
-  return rendered.length > 0 ? rendered[rendered.length - 1].originalIndex : -1;
+export function getLastRenderedIndex<
+  T extends Pick<ChatHistoryItem, "message">,
+>(rendered: RenderedHistoryItem<T>[]): number {
+  for (let i = rendered.length - 1; i >= 0; i--) {
+    if (rendered[i].item.message.role !== "tool") {
+      return rendered[i].originalIndex;
+    }
+  }
+  return -1;
 }
