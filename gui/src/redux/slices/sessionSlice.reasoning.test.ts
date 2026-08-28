@@ -139,6 +139,130 @@ describe("streamUpdate: structured reasoning_content", () => {
     expect(reasoningElapsedMs(thinking)).toBeGreaterThanOrEqual(0);
   });
 
+  it("closes the reasoning span when the user cancels mid-thought", () => {
+    let state: any = createState();
+
+    state = apply(state, [
+      {
+        choices: [
+          {
+            finish_reason: null,
+            index: 0,
+            delta: { reasoning_content: "Halfway through" },
+          },
+        ],
+      },
+    ]);
+    expect(state.history.at(-1).reasoning.active).toBe(true);
+
+    // Cancelling never produces a completion pair, so the span has to be
+    // closed here or it stays open for the lifetime of the session.
+    state = sessionSlice.reducer(state, { type: "session/setInactive" });
+
+    const thinking = state.history.find(
+      (item: any) => item.message.role === "thinking",
+    );
+    expect(thinking.reasoning.active).toBe(false);
+    expect(reasoningElapsedMs(thinking)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("closes a reasoning span that is no longer the last item on completion", () => {
+    let state: any = createState();
+
+    state = apply(state, [
+      {
+        choices: [
+          {
+            finish_reason: null,
+            index: 0,
+            delta: { reasoning_content: "Deciding" },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            finish_reason: null,
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "tc1",
+                  type: "function",
+                  function: { name: "ls", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    // Model a stream that ends with the thinking item no longer last: the
+    // tool call is `at(-1)`, so a last-item-only close misses the thinking
+    // item entirely. Rebuilt rather than mutated because the reducer freezes
+    // state.
+    const openIndex = state.history.findIndex(
+      (item: any) => item.message.role === "thinking",
+    );
+    state = {
+      ...state,
+      history: state.history.map((item: any, i: number) =>
+        i === openIndex
+          ? {
+              ...item,
+              reasoning: { ...item.reasoning, active: true, endAt: undefined },
+            }
+          : item,
+      ),
+    };
+
+    state = sessionSlice.reducer(state, {
+      type: "session/addPromptCompletionPair",
+      payload: [{ prompt: "p", completion: "c", modelTitle: "m" }],
+    });
+
+    expect(state.history[openIndex].reasoning.active).toBe(false);
+    expect(reasoningElapsedMs(state.history[openIndex])).toBeGreaterThanOrEqual(
+      0,
+    );
+  });
+
+  it("never reopens a closed span from an earlier turn", () => {
+    // The scan walks back past assistant items to reach a stranded thinking
+    // item. It must still stop at the turn boundary rather than walking into
+    // a previous turn's already-closed span and restamping its endAt.
+    const closed = { active: false, startAt: 10, endAt: 20, text: "old" };
+    let state: any = createState();
+    state = {
+      ...state,
+      history: [
+        {
+          message: { role: "thinking", content: "old", id: "t-old" },
+          reasoning: closed,
+          contextItems: [],
+        },
+        {
+          message: { role: "assistant", content: "prior answer", id: "a-old" },
+          contextItems: [],
+        },
+        {
+          message: { role: "user", content: "next", id: "u-1" },
+          contextItems: [],
+        },
+        {
+          message: { role: "assistant", content: "new answer", id: "a-new" },
+          contextItems: [],
+        },
+      ],
+    };
+
+    state = sessionSlice.reducer(state, { type: "session/setInactive" });
+
+    expect(state.history[0].reasoning).toEqual(closed);
+  });
+
   it("still records reasoning on the <think> tag path", () => {
     let state: any = createState();
 

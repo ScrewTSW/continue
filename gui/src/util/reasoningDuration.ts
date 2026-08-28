@@ -1,4 +1,4 @@
-import { ChatHistoryItem } from "core";
+import type { ChatHistoryItem } from "core";
 
 /**
  * Duration of an item's reasoning span, in milliseconds.
@@ -17,7 +17,10 @@ export function reasoningElapsedMs(
   item: Pick<ChatHistoryItem, "reasoning">,
 ): number | undefined {
   const reasoning = item.reasoning;
-  if (!reasoning?.startAt || !reasoning.endAt) {
+  // Explicitly undefined-checked, not falsy-checked: these are epoch
+  // timestamps, and a persisted or test-injected 0 is a real value that a
+  // falsy check would silently discard.
+  if (reasoning?.startAt === undefined || reasoning.endAt === undefined) {
     return undefined;
   }
   const elapsed = reasoning.endAt - reasoning.startAt;

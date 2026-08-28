@@ -94,9 +94,18 @@ export function closeOpenReasoning(
       reasoning.endAt = Date.now();
       return;
     }
-    // Only the trailing run of thinking items can hold an open span; stop at
-    // the first non-thinking item so we never reopen an older turn.
-    if (history[i].message.role !== "thinking") {
+    // Stop at a turn boundary so an older turn's span can never be reopened.
+    // A `user` message is unambiguously the boundary. Assistant items are not:
+    // structured reasoning emits the tool call the reasoning produced as an
+    // assistant item *after* the thinking item, so stopping at every
+    // non-thinking item would strand the span it was meant to close. Scan past
+    // assistant items that carry no reasoning of their own, since those belong
+    // to the turn still in flight.
+    const { role } = history[i].message;
+    if (role !== "thinking" && role !== "assistant") {
+      return;
+    }
+    if (role === "assistant" && reasoning) {
       return;
     }
   }
@@ -291,11 +300,12 @@ export const sessionSlice = createSlice({
         ? lastMessage.promptLogs.concat(payload)
         : payload;
 
-      // Inactive thinking for reasoning models when '</think>' tag is not received on request completion
-      if (lastMessage.reasoning?.active) {
-        lastMessage.reasoning.active = false;
-        lastMessage.reasoning.endAt = Date.now();
-      }
+      // Inactive thinking for reasoning models when '</think>' tag is not
+      // received on request completion. Scans back rather than checking only
+      // the last item: with structured reasoning the thinking item is followed
+      // by the tool-call item it produced, so it is no longer `at(-1)` by the
+      // time the stream completes.
+      closeOpenReasoning(state.history);
     },
     setActive: (state) => {
       state.isStreaming = true;
@@ -542,6 +552,12 @@ export const sessionSlice = createSlice({
       if (curMessage) {
         curMessage.isGatheringContext = false;
       }
+
+      // Streaming is over by every route that reaches here, including user
+      // cancellation, which produces no completion pair. An open span left
+      // here never closes again, so the block spins forever and loses its
+      // duration permanently.
+      closeOpenReasoning(state.history);
 
       state.isStreaming = false;
     },
