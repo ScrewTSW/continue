@@ -25,6 +25,12 @@ interface ThinkingBlockPeekProps {
   inProgress?: boolean;
   signature?: string;
   tokens?: number;
+  /**
+   * Reasoning duration taken from session state. Preferred over the local
+   * mount-timing fallback, which only works when the component happens to be
+   * mounted across the whole reasoning span.
+   */
+  elapsedMs?: number;
 }
 
 function ThinkingBlockPeek({
@@ -34,6 +40,7 @@ function ThinkingBlockPeek({
   prevItem,
   inProgress,
   tokens,
+  elapsedMs,
 }: ThinkingBlockPeekProps) {
   const uiConfig = useAppSelector(selectUIConfig);
   const [open, setOpen] = useState(uiConfig?.expandThinkingBlocks ?? false);
@@ -51,6 +58,14 @@ function ThinkingBlockPeek({
   }, [uiConfig?.expandThinkingBlocks]);
 
   useEffect(() => {
+    // `elapsedMs` comes from session state and is authoritative when present.
+    // The mount-timing path below is only a fallback for callers that do not
+    // record timing, and it cannot measure a span that finished before this
+    // component mounted.
+    if (elapsedMs !== undefined) {
+      setElapsedTime(`${(elapsedMs / 1000).toFixed(1)}s`);
+      return;
+    }
     if (inProgress) {
       setStartTime(Date.now());
       setElapsedTime("");
@@ -60,7 +75,7 @@ function ThinkingBlockPeek({
       const diffString = `${(diff / 1000).toFixed(1)}s`;
       setElapsedTime(diffString);
     }
-  }, [inProgress]);
+  }, [inProgress, elapsedMs]);
 
   return duplicateRedactedThinkingBlock ? null : (
     <div className="thread-message">
