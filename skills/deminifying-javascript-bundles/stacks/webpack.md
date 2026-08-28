@@ -23,7 +23,7 @@ esbuild `--minify`, splitting into per-module files is realistic, and webcrack
 targets exactly this.
 
 ```bash
-npx --yes webcrack bundle.js -o wc-out
+npx --yes webcrack@2.16.0 bundle.js -o wc-out
 find wc-out -type f | head -30      # expect MANY files, not one
 ```
 
