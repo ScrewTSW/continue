@@ -16,13 +16,22 @@ The goal is not a readable copy of the whole file. The goal is answering a speci
 
 ## The Iron Law
 
-**NEVER read, cat, or head a minified bundle directly.**
+**NEVER read a minified bundle with a line-based limit.**
 
-Not with `head -300`. Not "just to check the format". Not "the first few lines are probably fine".
+Not `head -300`. Not `cat`, `less`, or `grep -n`. Not "just to check the format".
+Not "the first few lines are probably fine".
 
-`head -N` counts **lines**, and minified bundles have almost none. A real measured case: 2,650,012 bytes in **907 lines**, longest line **156,328 characters**. `head -300` there returns most of the file. Any line-based limit is meaningless on minified JS.
+The prohibition is on the **unit**, not the tool. `head -N`, `tail -N`, `sed -n
+'1,Np'`, and `grep -n` all bound _lines_, and minified bundles have almost none.
+A real measured case: 2,650,012 bytes in **907 lines**, longest line **156,328
+characters**. `head -300` there returns most of the file. Any line-based limit is
+meaningless on minified JS.
 
-Use `wc`, `awk 'length($0)'`, `grep -c`, and byte-bounded slices instead. Every command in this skill is safe on a multi-megabyte single-line file.
+**Byte-based limits are fine and used throughout this skill** — `head -c 2000`,
+`grep -ob`, `wc -c`, and Python slices all bound output in bytes and are safe on
+a multi-megabyte single-line file. `head -c` is not a violation; `head -n` is.
+
+Use `wc`, `awk 'length($0)'`, `grep -c`, `grep -ob`, and byte-bounded slices.
 
 ## Step 1: Preflight — do I have the tools?
 
@@ -41,7 +50,19 @@ ls ~/.npm/_npx 2>/dev/null | head        # cached packages if offline
 | node, no registry, no cache                                | Grep-only (Step 4). Still effective.         |
 | no node                                                    | Grep-only. Python `str.find` for slicing.    |
 
-Do not `npm install -g`. Use `npx --yes <tool>` — no environment mutation.
+Do not `npm install -g`. Use `npx --yes <tool>@<exact-version>` — no environment
+mutation.
+
+**Pin the version.** A bare `npx --yes webcrack` resolves whatever the registry
+currently calls latest, so the tool that rewrites your AST is chosen at runtime
+by a third party. These commands run against code you are already treating as
+untrusted; pin both tools and bump deliberately. Versions used and measured
+throughout this skill: `webcrack@2.16.0`, `prettier@3.9.6`.
+
+On the offline branch use `npx --no-install <tool>@<version>`, which runs a
+cached package without installing. Note it is not an offline guarantee — it still
+contacts the registry to resolve the spec and fails if the package was never
+cached.
 
 ## Step 2: Pick the right bundle first
 
@@ -65,8 +86,12 @@ grep -c "useState\|createElement" bundle.js   # ~0 = no UI here, wrong file
 If that returns near zero and you are looking for UI, find the real one:
 
 ```bash
-grep -n "joinPath\|asWebviewUri" extension.js | grep -o '"[a-z]*", *"[a-z.]*js"'
+grep -oE '"[^"]+\.js"' extension.js | sort -u | head -20
 ```
+
+`"[a-z.]*js"` looks tighter but silently misses every real bundle path — it
+excludes `/`, digits, `_`, and `-`, so `"assets/index-D3f_2a.js"` does not match.
+Match any quoted non-quote run ending in `.js` and bound the output instead.
 
 Measured cost of skipping this step: a full webcrack+prettier cycle on a 2.65 MB
 `extension.js` that contained no UI at all (`useState: 0`, `createElement: 2`).
@@ -87,7 +112,11 @@ python3 -c "import os;print(int(os.path.getsize('orig.js')/3.2))"  # ~tokens
 
 If est. tokens > half your context, the whole-file read is off the table — which is the normal case.
 
-Then fingerprint the stack. These markers are cheap and mutually exclusive:
+Then fingerprint the stack. These markers are cheap, but **not mutually
+exclusive** — a webpack bundle routinely also carries Babel interop helpers, and
+an obfuscated bundle was minified by something first. Two hits is additional
+signal, not a contradiction. Read them in the table's order and take the first
+row that matches:
 
 ```bash
 grep -c "^// "                orig.js   # esbuild module boundaries (0 = --minify)
@@ -112,11 +141,21 @@ grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
 
 ```bash
 grep -c -i "sandbox" orig.js                    # count FIRST — always
-grep -n -i "sandbox" orig.js | head -20         # locate, bounded
+grep -obF "sandbox" orig.js | head -20          # locate: BYTE offsets, not lines
 grep -oE '"[a-z0-9@/_-]{4,40}"' orig.js | sort | uniq -c | sort -rn | head -30
 ```
 
-**Always bound a grep on a multi-megabyte file** — `| head`, `| wc -l`, or `-c`. An unbounded `grep -n` over a 4 MB file can dump enough to threaten the context limit by itself.
+**Locate by byte offset, never by line.** `grep -n` prints the whole matching
+line, and `| head -20` bounds the number of _lines_, not bytes — on minified
+input that is no bound at all. Measured: a file of one 400,001-byte line
+containing a single match returned **400,010 bytes** through `grep -n | head -20`.
+`grep -ob` prints `offset:match` and stays a few bytes per hit regardless of line
+length.
+
+Feed those offsets to the Python slicer below to read context.
+
+**Bound every grep on a multi-megabyte file** — `-c`, `-ob`, or `| wc -l`. The
+one form that is never safe is `grep -n`, bounded or not.
 
 ### Hazard: catastrophic regex backtracking
 
@@ -144,11 +183,11 @@ Beautify when you need **line numbers to cite**, repeated navigation, or control
 
 ```bash
 # Pass 1 — webcrack: unminify, restore control flow, split modules if metadata survived
-npx --yes webcrack orig.js -o wc-out
+npx --yes webcrack@2.16.0 orig.js -o wc-out
 
 # Pass 2 — prettier: consistent formatting, break residual long lines
 cp wc-out/deobfuscated.js pass2.js
-npx --yes prettier@3 --write pass2.js --log-level warn
+npx --yes prettier@3.9.6 --write pass2.js --log-level warn
 
 # Pass 3 — VERIFY. Non-negotiable.
 node --check pass2.js && echo VALID || echo BROKEN
@@ -182,6 +221,9 @@ grep -n "sandbox" pass2.js | head          # find the line
 sed -n '139700,139780p' pass2.js           # read a window
 ```
 
+`grep -n` is safe **here and only here**: after Pass 2 the longest line is ~1.5 KB,
+so a line is a real bound. Never use it on `orig.js`.
+
 Keep windows to ~100–500 lines. Widen only on a specific hit.
 
 ## Verifying a change reached built output
@@ -200,21 +242,30 @@ exists; old string _absent_ proves the bundle actually got replaced rather than 
 stale artifact being reinstalled.
 
 ```bash
-unzip -o -q built.vsix "extension/gui/assets/index.js" -d /tmp/check
+set -e                                            # a failed unzip must stop here
+rm -rf /tmp/check && mkdir -p /tmp/check          # never grep a previous run
+unzip -q built.vsix "extension/gui/assets/index.js" -d /tmp/check
+set +e
 grep -c -F "new string"  /tmp/check/extension/gui/assets/index.js   # want >0
 grep -c -F "old string"  /tmp/check/extension/gui/assets/index.js   # want 0
 ```
 
+**The `rm -rf` is the load-bearing line.** `unzip -o` overwrites but never
+deletes, so a failed extraction leaves the previous run's bundle in place and
+both greps then pass against a stale artifact — the exact false confirmation this
+section exists to prevent. `set -e` ensures the greps never run on a failed
+unzip. (`grep -c` returning 0 exits non-zero, hence `set +e` before them.)
+
 ## Quick Reference
 
-| Task                 | Command                                                          |
-| -------------------- | ---------------------------------------------------------------- |
-| Size in tokens       | `python3 -c "import os;print(int(os.path.getsize('f.js')/3.2))"` |
-| Longest line         | `awk '{if(length($0)>m)m=length($0)}END{print m}' f.js`          |
-| Count before dumping | `grep -c -i TERM f.js`                                           |
-| Safe context extract | Python `str.find` + slice                                        |
-| Beautify             | `npx --yes webcrack f.js -o out` then `prettier@3 --write`       |
-| Verify               | `node --check out.js`                                            |
+| Task                 | Command                                                               |
+| -------------------- | --------------------------------------------------------------------- |
+| Size in tokens       | `python3 -c "import os;print(int(os.path.getsize('f.js')/3.2))"`      |
+| Longest line         | `awk '{if(length($0)>m)m=length($0)}END{print m}' f.js`               |
+| Count before dumping | `grep -c -i TERM f.js`                                                |
+| Safe context extract | Python `str.find` + slice                                             |
+| Beautify             | `npx --yes webcrack@2.16.0 f.js -o out` then `prettier@3.9.6 --write` |
+| Verify               | `node --check out.js`                                                 |
 
 ## Common Mistakes
 
@@ -222,7 +273,7 @@ grep -c -F "old string"  /tmp/check/extension/gui/assets/index.js   # want 0
 | --------------------------------------- | ---------------------------------------------------------------------- |
 | `head -300` on a bundle                 | Counts lines. 300 lines can be 2 MB. Blows context.                    |
 | `grep -oE '.{200}X.{400}'`              | Catastrophic backtracking on long lines. Use Python.                   |
-| Unbounded `grep -n`                     | Can dump megabytes. Always `-c` first, then `\| head`.                 |
+| `grep -n` on a bundle, even `\| head`   | `head` bounds lines, not bytes. Use `grep -ob` for offsets.            |
 | Chasing mangled identifiers             | `Nkt`/`USt` are dead ends. Hunt strings.                               |
 | Beautifying first                       | Step 4 often answers the question at a fraction of the cost.           |
 | Trusting line-count growth              | webcrack can duplicate modules. Growth ≠ pure recovery.                |

@@ -59,8 +59,11 @@ Highest-yield step; frequently ends the task.
 
 ```bash
 grep -c -i "TERM" orig.js                 # count first, always
-grep -n -i "TERM" orig.js | head -20      # then locate
+grep -obiF "TERM" orig.js | head -20      # then locate, by BYTE offset
 ```
+
+`grep -n` here would print an entire 156 KB line per hit; `-ob` prints
+`offset:match`. Feed the offsets to the parent skill's Python slicer.
 
 Enumerate the vocabulary when you do not yet know the term:
 
@@ -82,9 +85,9 @@ grep -oE '"@[a-z0-9-]+/[a-z0-9-]+"' orig.js | sort -u | head
 ### 2. Beautify only if you need line numbers
 
 ```bash
-npx --yes webcrack orig.js -o wc-out      # ~10s on 2.65MB, 74k changes
+npx --yes webcrack@2.16.0 orig.js -o wc-out      # ~10s on 2.65MB, 74k changes
 cp wc-out/deobfuscated.js pass2.js
-npx --yes prettier@3 --write pass2.js --log-level warn
+npx --yes prettier@3.9.6 --write pass2.js --log-level warn
 node --check pass2.js && echo VALID
 ```
 
@@ -124,7 +127,7 @@ Question: _how does the sandbox configuration work?_
 
 ```bash
 grep -c -i "sandbox" orig.js        # 33 — small enough to enumerate
-grep -n -i "sandbox" orig.js | head -20
+grep -obiF "sandbox" orig.js | head -20
 ```
 
 33 hits clustered in one region → beautify → `grep -n "sandbox" pass2.js` →

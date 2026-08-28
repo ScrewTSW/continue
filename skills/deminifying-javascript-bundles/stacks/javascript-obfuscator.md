@@ -23,7 +23,7 @@ Hallmarks:
 Authoritative check — webcrack reports it explicitly:
 
 ```bash
-npx --yes webcrack bundle.js -o wc-out 2>&1 | grep -i "string array"
+npx --yes webcrack@2.16.0 bundle.js -o wc-out 2>&1 | grep -i "string array"
 ```
 
 `String Array: yes` confirms this stack. (`no` is what plain esbuild/webpack
@@ -31,7 +31,7 @@ minification reports.)
 
 ## Why this is fundamentally different
 
-**Step 3 of the parent skill does not work here.** String-hunting is the core
+**Step 4 of the parent skill does not work here.** String-hunting is the core
 technique everywhere else, and this stack is built specifically to defeat it.
 Every literal has been moved into the array and replaced by a call, so
 `grep -i "sandbox"` returns nothing even when the string is present.
@@ -45,13 +45,23 @@ plan, where beautifying is merely a convenience.
 2. Let webcrack decode — it resolves the array, applies the rotation, and
    inlines literals back to call sites. This is its primary purpose.
 3. **Verify decoding actually happened** before trusting anything:
+
    ```bash
-   grep -c "_0x" wc-out/deobfuscated.js    # should drop sharply
-   grep -c -i "TERM" wc-out/deobfuscated.js  # strings should now be greppable
+   grep -oF "_0x" wc-out/deobfuscated.js | wc -l   # occurrences, should drop sharply
+   grep -c -i "TERM" wc-out/deobfuscated.js        # strings should now be greppable
    ```
-   If `_0x` counts stay high, decoding failed — likely a custom or nested
-   variant. Do not proceed as if the output were clean.
-4. Only after literals are restored, apply the parent skill's Step 3.
+
+   Count occurrences, not lines. `grep -c` counts _matching lines_ — one line
+   holding `_0xfoo(_0xbar,_0xbaz)` reports `1` where `grep -oF | wc -l` reports
+   `3`. On a still-minified file that understates the residue by orders of
+   magnitude and can make failed decoding look like success.
+
+   If the count stays high, decoding failed — likely a custom or nested variant.
+   Do not proceed as if the output were clean.
+
+4. Only after literals are restored, apply the parent skill's Step 4
+   (string extraction). Step 3's measure-and-fingerprint is still worth re-running
+   on the decoded file, since size and line counts change substantially.
 5. `node --check` as always.
 
 ## Additional obstacles this stack may add
