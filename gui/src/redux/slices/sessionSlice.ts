@@ -66,15 +66,6 @@ function filterMultipleEditToolCalls(
 }
 
 /**
- * Initializes tool call states for a new message containing tool calls.
- * This function is called when we receive a complete message with tool calls,
- * typically in non-streaming scenarios or when processing the first chunk
- * of a streaming message that contains tool calls.
- *
- * @param message - The chat message containing tool calls to process
- * @param lastItem - The chat history item to attach tool call states to
- */
-/**
  * Mark the most recent still-open reasoning span as finished.
  *
  * Reasoning reaches us two ways: `<think>` tags inside assistant content, and
@@ -111,6 +102,15 @@ export function closeOpenReasoning(
   }
 }
 
+/**
+ * Initializes tool call states for a new message containing tool calls.
+ * This function is called when we receive a complete message with tool calls,
+ * typically in non-streaming scenarios or when processing the first chunk
+ * of a streaming message that contains tool calls.
+ *
+ * @param message - The chat message containing tool calls to process
+ * @param lastItem - The chat history item to attach tool call states to
+ */
 export function handleToolCallsInMessage(
   message: ChatMessage,
   lastItem: ChatHistoryItemWithMessageId,

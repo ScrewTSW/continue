@@ -35,6 +35,13 @@ export default function StepContainer(props: StepContainerProps) {
   const historyItemAfterThis = useAppSelector(
     (state) => state.session.history[props.index + 1],
   );
+  // The genuinely previous item. `ThinkingBlockPeek` compares it against its
+  // own content to suppress a repeated redacted-thinking block; passing this
+  // component's own item made that comparison self-referential, so it could
+  // never match.
+  const historyItemBeforeThis = useAppSelector((state) =>
+    props.index > 0 ? state.session.history[props.index - 1] : undefined,
+  );
   const showResponseActions =
     (props.isLast || historyItemAfterThis?.message.role === "user") &&
     !(props.isLast && (isStreaming || props.item.toolCallStates));
@@ -90,7 +97,7 @@ export default function StepContainer(props: StepContainerProps) {
               <ThinkingBlockPeek
                 content={props.item.reasoning.text}
                 index={props.index}
-                prevItem={props.index > 0 ? props.item : null}
+                prevItem={historyItemBeforeThis ?? null}
                 // Keyed to `active`, not to a missing `endAt`: a span closed
                 // before this field existed -- or by an older build that left
                 // it unset -- has no `endAt` and would otherwise render as

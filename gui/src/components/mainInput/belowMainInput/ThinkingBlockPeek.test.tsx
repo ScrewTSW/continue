@@ -152,3 +152,66 @@ describe("ThinkingBlockPeek", () => {
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+const redactedThinkingItem = () =>
+  ({
+    message: {
+      role: "thinking",
+      content: "",
+      id: "t-prev",
+      redactedThinking: "hidden",
+    },
+    contextItems: [],
+  }) as any;
+
+// `prevItem` must be the genuinely PREVIOUS history item. StepContainer used to
+// pass its own item, which made this comparison self-referential so the
+// suppression could never fire.
+describe("ThinkingBlockPeek redacted de-duplication", () => {
+  it("suppresses a redacted block repeating the previous item", () => {
+    renderPeek(undefined, {
+      content: "",
+      redactedThinking: "hidden",
+      index: 1,
+      prevItem: redactedThinkingItem(),
+    });
+
+    expect(screen.queryByTestId("thinking-block-peek")).toBeNull();
+  });
+
+  it("renders when the previous item is not redacted thinking", () => {
+    renderPeek(undefined, {
+      content: "",
+      redactedThinking: "hidden",
+      index: 1,
+      prevItem: {
+        message: { role: "assistant", content: "answer", id: "a-prev" },
+        contextItems: [],
+      } as any,
+    });
+
+    expect(toggle()).toBeTruthy();
+  });
+
+  it("renders a redacted block when there is no previous item", () => {
+    renderPeek(undefined, {
+      content: "",
+      redactedThinking: "hidden",
+      index: 0,
+      prevItem: null,
+    });
+
+    expect(toggle()).toBeTruthy();
+  });
+
+  it("never suppresses an ordinary reasoning block", () => {
+    // Suppression is only for repeated *redacted* blocks.
+    renderPeek(undefined, {
+      content: "weighing options",
+      index: 1,
+      prevItem: redactedThinkingItem(),
+    });
+
+    expect(toggle()).toBeTruthy();
+  });
+});
