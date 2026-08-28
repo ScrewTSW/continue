@@ -56,6 +56,7 @@ import { cancelStream } from "../../redux/thunks/cancelStream";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
 import { reasoningElapsedMs } from "../../util/reasoningDuration";
 import { EmptyChatBody } from "./EmptyChatBody";
+import { getLastRenderedIndex, getRenderedHistory } from "./renderedHistory";
 import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
 import { useAutoScroll } from "./useAutoScroll";
 
@@ -270,6 +271,9 @@ export function Chat() {
     [history],
   );
 
+  const renderedHistory = useMemo(() => getRenderedHistory(history), [history]);
+  const lastRenderedIndex = getLastRenderedIndex(renderedHistory);
+
   const renderChatHistoryItem = useCallback(
     (item: ChatHistoryItemWithMessageId, index: number) => {
       const {
@@ -324,7 +328,7 @@ export function Chat() {
               >
                 <StepContainer
                   index={index}
-                  isLast={index === history.length - 1}
+                  isLast={index === lastRenderedIndex}
                   item={item}
                   latestSummaryIndex={latestSummaryIndex}
                 />
@@ -347,7 +351,7 @@ export function Chat() {
         // still arriving. Returning null for an item that is mid-stream (or
         // that carries redacted reasoning) silently swallows the model's
         // response and leaves a gap between tool calls with no explanation.
-        const isLast = index === history.length - 1;
+        const isLast = index === lastRenderedIndex;
         const stillStreaming = isLast && isStreaming;
         if (
           !thinkingContent?.trim() &&
@@ -390,7 +394,7 @@ export function Chat() {
           >
             <StepContainer
               index={index}
-              isLast={index === history.length - 1}
+              isLast={index === lastRenderedIndex}
               item={item}
               latestSummaryIndex={latestSummaryIndex}
             />
@@ -414,26 +418,24 @@ export function Chat() {
       >
         <DeprecationBanner dismissable={true} />
         {highlights}
-        {history
-          .filter((item) => item.message.role !== "system")
-          .map((item, index: number) => (
-            <div
-              key={item.message.id}
-              style={{
-                minHeight: index === history.length - 1 ? "200px" : 0,
+        {renderedHistory.map(({ item, originalIndex }) => (
+          <div
+            key={item.message.id}
+            style={{
+              minHeight: originalIndex === lastRenderedIndex ? "200px" : 0,
+            }}
+          >
+            <ErrorBoundary
+              FallbackComponent={fallbackRender}
+              onReset={() => {
+                dispatch(newSession());
               }}
             >
-              <ErrorBoundary
-                FallbackComponent={fallbackRender}
-                onReset={() => {
-                  dispatch(newSession());
-                }}
-              >
-                {renderChatHistoryItem(item, index)}
-              </ErrorBoundary>
-              {index === history.length - 1 && <InlineErrorMessage />}
-            </div>
-          ))}
+              {renderChatHistoryItem(item, originalIndex)}
+            </ErrorBoundary>
+            {originalIndex === lastRenderedIndex && <InlineErrorMessage />}
+          </div>
+        ))}
       </StepsDiv>
       <div className={"relative shrink-0"}>
         <ContinueInputBox
