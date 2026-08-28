@@ -91,7 +91,11 @@ export default function StepContainer(props: StepContainerProps) {
                 content={props.item.reasoning.text}
                 index={props.index}
                 prevItem={props.index > 0 ? props.item : null}
-                inProgress={!props.item.reasoning?.endAt}
+                // Keyed to `active`, not to a missing `endAt`: a span closed
+                // before this field existed -- or by an older build that left
+                // it unset -- has no `endAt` and would otherwise render as
+                // "Thinking..." forever on every session reload.
+                inProgress={props.item.reasoning?.active === true}
                 elapsedMs={reasoningElapsedMs(props.item)}
               />
             )}

@@ -94,17 +94,17 @@ export function closeOpenReasoning(
       reasoning.endAt = Date.now();
       return;
     }
-    // Stop at a turn boundary so an older turn's span can never be reopened.
-    // A `user` message is unambiguously the boundary. Assistant items are not:
-    // structured reasoning emits the tool call the reasoning produced as an
-    // assistant item *after* the thinking item, so stopping at every
-    // non-thinking item would strand the span it was meant to close. Scan past
-    // assistant items that carry no reasoning of their own, since those belong
-    // to the turn still in flight.
+    // Stop at the turn boundary so an older turn's span can never be reopened.
+    // Only a `user` message starts a new turn: everything between two user
+    // messages -- assistant items, the tool calls reasoning produced, and their
+    // `tool` results -- belongs to the turn still in flight, and an open span
+    // can sit behind any of them when a stream ends or is cancelled.
     const { role } = history[i].message;
-    if (role !== "thinking" && role !== "assistant") {
+    if (role === "user" || role === "system") {
       return;
     }
+    // An assistant item with its own span means that span is already closed
+    // and this one belongs to an earlier exchange; do not walk past it.
     if (role === "assistant" && reasoning) {
       return;
     }
@@ -590,7 +590,11 @@ export const sessionSlice = createSlice({
 
           // OpenAI-compatible models in agent mode sometimes send
           // all of their data in one message, so we handle that case early.
-          if (messageContent && message.role !== "tool") {
+          // Assistant-only: a `thinking` message is already structured
+          // reasoning, and a provider may emit literal `<think>` tags inside
+          // `reasoning_content`. Parsing those again would split the message
+          // down the assistant path and lose the structured block entirely.
+          if (messageContent && message.role === "assistant") {
             const thinkMatches = messageContent.match(
               /<think>([\s\S]*)<\/think>([\s\S]*)/,
             );
@@ -682,7 +686,9 @@ export const sessionSlice = createSlice({
               }
             } else if (
               messageContent.includes("<think>") &&
-              message.role !== "tool"
+              // Assistant-only, as above: structured reasoning must not be
+              // re-parsed as an inline tag.
+              message.role === "assistant"
             ) {
               lastItem.reasoning = {
                 startAt: Date.now(),

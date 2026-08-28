@@ -229,6 +229,75 @@ describe("streamUpdate: structured reasoning_content", () => {
     );
   });
 
+  it("does not re-parse <think> tags carried inside reasoning_content", () => {
+    // A provider can emit literal tags inside the structured field. Feeding a
+    // thinking-role message back through the inline tag parser would route it
+    // down the assistant path and lose the structured block.
+    let state: any = createState();
+
+    state = apply(state, [
+      {
+        choices: [
+          {
+            finish_reason: null,
+            index: 0,
+            delta: { reasoning_content: "<think>weighing options</think>" },
+          },
+        ],
+      },
+    ]);
+
+    const thinking = state.history.filter(
+      (item: any) => item.message.role === "thinking",
+    );
+    expect(thinking).toHaveLength(1);
+    // Text is preserved verbatim; no assistant item is split out of it.
+    expect(thinking[0].message.content).toBe("<think>weighing options</think>");
+    expect(
+      state.history.some(
+        (item: any) =>
+          item.message.role === "assistant" && item.message.content?.trim(),
+      ),
+    ).toBe(false);
+  });
+
+  it("closes a span stranded behind a tool result in the same turn", () => {
+    // Real agent turn: thinking -> assistant(tool_call) -> tool(result). If the
+    // stream ends or is cancelled here, the span from THIS turn sits behind a
+    // tool item. Treating `tool` as a hard stop leaves it open forever.
+    let state: any = createState();
+    state = {
+      ...state,
+      history: [
+        {
+          message: { role: "user", content: "list /tmp", id: "u-0" },
+          contextItems: [],
+        },
+        {
+          message: { role: "thinking", content: "need ls", id: "t-0" },
+          reasoning: { active: true, startAt: 1000, text: "need ls" },
+          contextItems: [],
+        },
+        {
+          message: { role: "assistant", content: "", id: "a-0" },
+          contextItems: [],
+        },
+        {
+          message: { role: "tool", content: "file-a\nfile-b", id: "tool-0" },
+          contextItems: [],
+        },
+      ],
+    };
+
+    state = sessionSlice.reducer(state, { type: "session/setInactive" });
+
+    const thinking = state.history.find(
+      (item: any) => item.message.role === "thinking",
+    );
+    expect(thinking.reasoning.active).toBe(false);
+    expect(reasoningElapsedMs(thinking)).toBeGreaterThanOrEqual(0);
+  });
+
   it("never reopens a closed span from an earlier turn", () => {
     // The scan walks back past assistant items to reach a stranded thinking
     // item. It must still stop at the turn boundary rather than walking into
