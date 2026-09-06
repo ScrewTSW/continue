@@ -43,10 +43,10 @@ jobs:
         with:
           node-version-file: ".nvmrc"
 
-      # `workflow_dispatch` allows any ref to be selected, so without this a
-      # nightly could be published from unmerged feature-branch code.
+      # `workflow_dispatch` allows any ref to be selected
       # Scheduled runs always use the default branch.
-      - name: Refuse to build from anything but main
+      - name: Refuse to build from anything but main unless manual trigger
+        if: github.event_name != 'workflow_dispatch'
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::Nightly builds must run from refs/heads/main (got $GITHUB_REF)"
