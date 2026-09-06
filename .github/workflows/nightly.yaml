@@ -201,7 +201,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "$TAG" \
-            --notes "Automated nightly build from \`main\` (${{ github.sha }}).
+            --notes "Automated nightly build from \`${{ github.ref_name }}\` (${{ github.sha }}).
 
           **Pre-release — not for production use.**
 
