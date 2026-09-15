@@ -33,8 +33,8 @@ const LayoutTopDiv = styled(CustomScrollbarDiv)`
 const GridDiv = styled.div`
   display: grid;
   grid-template-rows: 1fr auto;
-  height: 100vh;
-  overflow-x: visible;
+  height: 100%;
+  overflow-x: hidden;
 `;
 
 const Layout = () => {
@@ -202,7 +202,7 @@ const Layout = () => {
           <div
             style={{
               scrollbarGutter: "stable both-edges",
-              minHeight: "100%",
+              height: "100%",
               display: "grid",
               gridTemplateRows: "1fr auto",
             }}
