@@ -39,6 +39,7 @@ Check before planning, because the answer changes the plan. A missing toolchain 
 
 ```bash
 node --version && npm --version          # need node for every tool below
+python3 --version                        # bounded slicing + filtering JSON
 timeout 10 npm ping                      # registry reachable? npx needs it
 ls ~/.npm/_npx 2>/dev/null | head        # cached packages if offline
 ```
@@ -50,8 +51,42 @@ ls ~/.npm/_npx 2>/dev/null | head        # cached packages if offline
 | node, no registry, no cache                                | Grep-only (Step 4). Still effective.         |
 | no node                                                    | Grep-only. Python `str.find` for slicing.    |
 
+Python is not optional in practice: it does the byte-bounded slicing in Step 4
+and the `identifiers.json` filtering in Step 6. Without it you can still grep,
+but every "extract context safely" recipe here needs rewriting.
+
 Do not `npm install -g`. Use `npx --yes <tool>@<exact-version>` — no environment
 mutation.
+
+**Extra dependencies for Step 6 only.** Semantic renaming needs Babel, which
+is the one place this skill does install packages. Skip this unless you are
+doing Step 6:
+
+```bash
+# one-time: the AST tooling that owns scope-safe renaming
+npx --yes skills add ajsb85/humanify-deobfuscate -g
+cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install
+```
+
+That `npm install` is **local to the skill directory**, not global — it writes
+`node_modules/` under `~/.claude/skills/humanify-deobfuscate/scripts/` and
+mutates nothing else, so it is consistent with the no-`-g` rule above rather
+than an exception to it. It installs `@babel/parser`, `@babel/traverse`, and
+`@babel/generator`. No API key and no network calls at extract/apply time.
+
+`scripts/refcount.mjs` in _this_ skill borrows Babel from that install. If you
+have those packages somewhere else already, point it there instead and skip
+the install: `BABEL_FROM=/path/to/dir/with/node_modules`.
+
+Confirm it landed — a failed `skills add` or forgotten `npm install` shows up
+as a crash mid-pipeline otherwise:
+
+```bash
+ls ~/.claude/skills/humanify-deobfuscate/scripts/*.mjs | wc -l   # expect 7
+node -e 'const{createRequire}=require("module");
+  const r=createRequire(process.env.HOME+"/.claude/skills/humanify-deobfuscate/scripts/");
+  r("@babel/parser");r("@babel/traverse");console.log("babel OK")'
+```
 
 **Pin the version.** A bare `npx --yes webcrack` resolves whatever the registry
 currently calls latest, so the tool that rewrites your AST is chosen at runtime
@@ -212,7 +247,39 @@ Measured head-to-head, same question, same bundle, minified vs. beautified:
 
 **Known cost:** webcrack may duplicate modules. On the reference bundle it emitted two near-identical copies of several modules, so grep hit counts doubled. Line growth is partly inflation, not pure recovery. Verify a hit is unique before treating it as the only definition.
 
-## Step 6: Read in bounded chunks
+## Step 6: Semantic renaming (optional)
+
+Beautifying (Step 5) recovers syntax, never names — identifiers stay
+permanently mangled. Skip this step if you only need to answer one question;
+string-grepping (Step 4) is usually cheaper for that. Use it when mangled
+names are themselves blocking the work: writing new code against the bundle,
+explaining a component, or extracting a component into its own file.
+
+[stacks/semantic-renaming.md](stacks/semantic-renaming.md) — **tested**, via
+the `humanify-deobfuscate` Claude Code skill (an AST tool extracts bindings +
+context and applies renames scope-safely; you supply the names from
+context). Covers filtering a large `identifiers.json` down to a target list,
+naming heuristics that mattered in practice (recognizing a tree-shaken
+library's internals from a structural pattern, true aliases vs. distinct
+symbols, cross-checking against existing prose docs), and gotchas specific to
+esbuild `--minify` output (no module-splitting mode applies; line numbers
+shift after every apply pass).
+
+Pick targets with [scripts/refcount.mjs](scripts/refcount.mjs) — per-binding
+reference counts from Babel's scope data, so naming effort goes to the few
+hundred symbols that carry the file:
+
+```bash
+node <skill-dir>/scripts/refcount.mjs beautified.js refs.json \
+  --top-level-only --min-refs 50
+```
+
+Do **not** rank candidates with `grep -c <name>`. On a real bundle that puts
+English words from error strings (`the`, `get`, `of`) at the top and reports
+one inflated total for every same-named binding across unrelated scopes.
+Needs Babel from the `humanify-deobfuscate` skill, or set `BABEL_FROM`.
+
+## Step 7: Read in bounded chunks
 
 Never read the beautified file whole either — it is _larger_ than the original.
 
@@ -258,30 +325,33 @@ unzip. (`grep -c` returning 0 exits non-zero, hence `set +e` before them.)
 
 ## Quick Reference
 
-| Task                 | Command                                                               |
-| -------------------- | --------------------------------------------------------------------- |
-| Size in tokens       | `python3 -c "import os;print(int(os.path.getsize('f.js')/3.2))"`      |
-| Longest line         | `awk '{if(length($0)>m)m=length($0)}END{print m}' f.js`               |
-| Count before dumping | `grep -c -i TERM f.js`                                                |
-| Safe context extract | Python `str.find` + slice                                             |
-| Beautify             | `npx --yes webcrack@2.16.0 f.js -o out` then `prettier@3.9.6 --write` |
-| Verify               | `node --check out.js`                                                 |
+| Task                 | Command                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| Size in tokens       | `python3 -c "import os;print(int(os.path.getsize('f.js')/3.2))"`                       |
+| Longest line         | `awk '{if(length($0)>m)m=length($0)}END{print m}' f.js`                                |
+| Count before dumping | `grep -c -i TERM f.js`                                                                 |
+| Safe context extract | Python `str.find` + slice                                                              |
+| Beautify             | `npx --yes webcrack@2.16.0 f.js -o out` then `prettier@3.9.6 --write`                  |
+| Verify               | `node --check out.js`                                                                  |
+| Rank rename targets  | `node "$SKILL_DIR/scripts/refcount.mjs" f.js refs.json --top-level-only --min-refs 50` |
 
 ## Common Mistakes
 
-| Mistake                                 | Reality                                                                |
-| --------------------------------------- | ---------------------------------------------------------------------- |
-| `head -300` on a bundle                 | Counts lines. 300 lines can be 2 MB. Blows context.                    |
-| `grep -oE '.{200}X.{400}'`              | Catastrophic backtracking on long lines. Use Python.                   |
-| `grep -n` on a bundle, even `\| head`   | `head` bounds lines, not bytes. Use `grep -ob` for offsets.            |
-| Chasing mangled identifiers             | `Nkt`/`USt` are dead ends. Hunt strings.                               |
-| Beautifying first                       | Step 4 often answers the question at a fraction of the cost.           |
-| Trusting line-count growth              | webcrack can duplicate modules. Growth ≠ pure recovery.                |
-| Skipping `node --check`                 | A broken transform silently produces plausible nonsense.               |
-| Editing the original                    | Always copy first.                                                     |
-| Assuming module boundaries survive      | `--minify` strips `// node_modules/...`. Verify with `grep -c "^// "`. |
-| Assuming the entry point is the UI      | `extension.js` is the host bundle. Check `grep -c "useState"` first.   |
-| Grepping built output by source pattern | Template literals leave no literal to match. Search constants.         |
+| Mistake                                 | Reality                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| `head -300` on a bundle                 | Counts lines. 300 lines can be 2 MB. Blows context.                         |
+| `grep -oE '.{200}X.{400}'`              | Catastrophic backtracking on long lines. Use Python.                        |
+| `grep -n` on a bundle, even `\| head`   | `head` bounds lines, not bytes. Use `grep -ob` for offsets.                 |
+| Chasing mangled identifiers             | `Nkt`/`USt` are dead ends. Hunt strings.                                    |
+| Beautifying first                       | Step 4 often answers the question at a fraction of the cost.                |
+| Trusting line-count growth              | webcrack can duplicate modules. Growth ≠ pure recovery.                     |
+| Skipping `node --check`                 | A broken transform silently produces plausible nonsense.                    |
+| Editing the original                    | Always copy first.                                                          |
+| Assuming module boundaries survive      | `--minify` strips `// node_modules/...`. Verify with `grep -c "^// "`.      |
+| Assuming the entry point is the UI      | `extension.js` is the host bundle. Check `grep -c "useState"` first.        |
+| Grepping built output by source pattern | Template literals leave no literal to match. Search constants.              |
+| `grep -c name` to rank rename targets   | Counts strings/keys/prose and merges shadowed bindings. Use `refcount.mjs`. |
+| Hand-editing identifiers to rename them | Corrupts shadowed bindings silently. Only ever `scope.rename` via AST.      |
 
 ## Scope Limits
 
