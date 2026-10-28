@@ -130,8 +130,18 @@ it to the byte-oriented tools the parent skill uses elsewhere (`grep -ob`
 offsets, `dd skip=`, `tail -c`) without converting first:
 
 ```python
-byte_off = len(src[:pos].encode("utf-8"))   # UTF-16 index -> UTF-8 byte offset
+# UTF-16 code-unit index -> UTF-8 byte offset.
+# Slice in UTF-16 space, because Python slices CODE POINTS while pos counts
+# UTF-16 CODE UNITS; `src[:pos]` is wrong as soon as any astral character
+# (emoji, rarer CJK) precedes the declaration — each one is 1 code point but
+# 2 code units, so the naive slice drifts one position per occurrence.
+prefix = src.encode("utf-16-le")[: pos * 2].decode("utf-16-le")
+byte_off = len(prefix.encode("utf-8"))
 ```
+
+Verified on `'/* 😀 */ var target = 1;'`: Babel reports `pos` 13, the correct
+byte offset is 15, and the naive code-point slice gives 14. On ASCII-only
+input all three agree, which is exactly why this stays hidden until it bites.
 
 **How to find your target names first**, if you don't already know them:
 read the surrounding code by hand with the parent skill's byte-bounded

@@ -31,7 +31,9 @@ meaningless on minified JS.
 `grep -ob`, `wc -c`, and Python slices all bound output in bytes and are safe on
 a multi-megabyte single-line file. `head -c` is not a violation; `head -n` is.
 
-Use `wc`, `awk 'length($0)'`, `grep -c`, `grep -ob`, and byte-bounded slices.
+Use `wc`, `awk 'length($0)'`, `grep -ob`, `grep -oF … | wc -l`, and
+byte-bounded slices. Note `grep -c` counts **lines**, so on this input it is a
+presence check, not a count — see Step 2.
 
 ## Step 1: Preflight — do I have the tools?
 
@@ -176,7 +178,8 @@ mkdir -p /tmp/work                       # not guaranteed to exist
 cp bundle.js /tmp/work/orig.js
 cd /tmp/work
 
-wc -lc orig.js                                        # bytes and lines
+wc -l orig.js                                         # lines
+wc -c orig.js                                         # bytes
 awk '{if(length($0)>m)m=length($0)}END{print m}' orig.js   # longest line
 python3 -c "import os;print(int(os.path.getsize('orig.js')/3.2))"  # ~tokens
 ```
@@ -270,7 +273,8 @@ cp wc-out/deobfuscated.js pass2.js
 npx --yes prettier@3.9.6 --write pass2.js --log-level warn
 
 # Pass 3 — VERIFY. Non-negotiable.
-node --check pass2.js && echo VALID || echo BROKEN
+node --check pass2.js || { echo BROKEN; exit 1; }
+echo VALID
 ```
 
 Measured on the reference bundle (2.65 MB esbuild): 907 lines → 154,720 (webcrack, ~10s, 74k changes) → 166,985 (prettier), `node --check` valid. A 500-line chunk is ~2,872 tokens — safely readable.
@@ -374,7 +378,7 @@ unzip. (`grep -c` returning 0 exits non-zero, hence `set +e` before them.)
 | -------------------- | -------------------------------------------------------------------------------------- |
 | Size in tokens       | `python3 -c "import os;print(int(os.path.getsize('f.js')/3.2))"`                       |
 | Longest line         | `awk '{if(length($0)>m)m=length($0)}END{print m}' f.js`                                |
-| Count before dumping | `grep -c -i TERM f.js`                                                                 |
+| Count before dumping | `grep -oiF TERM f.js \| wc -l`                                                         |
 | Safe context extract | Python `str.find` + slice                                                              |
 | Beautify             | `npx --yes webcrack@2.16.0 f.js -o out` then `prettier@3.9.6 --write`                  |
 | Verify               | `node --check out.js`                                                                  |
@@ -382,21 +386,21 @@ unzip. (`grep -c` returning 0 exits non-zero, hence `set +e` before them.)
 
 ## Common Mistakes
 
-| Mistake                                 | Reality                                                                     |
-| --------------------------------------- | --------------------------------------------------------------------------- |
-| `head -300` on a bundle                 | Counts lines. 300 lines can be 2 MB. Blows context.                         |
-| `grep -oE '.{200}X.{400}'`              | Catastrophic backtracking on long lines. Use Python.                        |
-| `grep -n` on a bundle, even `\| head`   | `head` bounds lines, not bytes. Use `grep -ob` for offsets.                 |
-| Chasing mangled identifiers             | `Nkt`/`USt` are dead ends. Hunt strings.                                    |
-| Beautifying first                       | Step 4 often answers the question at a fraction of the cost.                |
-| Trusting line-count growth              | webcrack can duplicate modules. Growth ≠ pure recovery.                     |
-| Skipping `node --check`                 | A broken transform silently produces plausible nonsense.                    |
-| Editing the original                    | Always copy first.                                                          |
-| Assuming module boundaries survive      | `--minify` strips `// node_modules/...`. Verify with `grep -c "^// "`.      |
-| Assuming the entry point is the UI      | `extension.js` is the host bundle. Check `grep -c "useState"` first.        |
-| Grepping built output by source pattern | Template literals leave no literal to match. Search constants.              |
-| `grep -c name` to rank rename targets   | Counts strings/keys/prose and merges shadowed bindings. Use `refcount.mjs`. |
-| Hand-editing identifiers to rename them | Corrupts shadowed bindings silently. Only ever `scope.rename` via AST.      |
+| Mistake                                 | Reality                                                                      |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| `head -300` on a bundle                 | Counts lines. 300 lines can be 2 MB. Blows context.                          |
+| `grep -oE '.{200}X.{400}'`              | Catastrophic backtracking on long lines. Use Python.                         |
+| `grep -n` on a bundle, even `\| head`   | `head` bounds lines, not bytes. Use `grep -ob` for offsets.                  |
+| Chasing mangled identifiers             | `Nkt`/`USt` are dead ends. Hunt strings.                                     |
+| Beautifying first                       | Step 4 often answers the question at a fraction of the cost.                 |
+| Trusting line-count growth              | webcrack can duplicate modules. Growth ≠ pure recovery.                      |
+| Skipping `node --check`                 | A broken transform silently produces plausible nonsense.                     |
+| Editing the original                    | Always copy first.                                                           |
+| Assuming module boundaries survive      | `--minify` strips `// node_modules/...`. Verify with `grep -c "^// "`.       |
+| Assuming the entry point is the UI      | `extension.js` is the host bundle. Check `grep -oF useState \| wc -l` first. |
+| Grepping built output by source pattern | Template literals leave no literal to match. Search constants.               |
+| `grep -c name` to rank rename targets   | Counts strings/keys/prose and merges shadowed bindings. Use `refcount.mjs`.  |
+| Hand-editing identifiers to rename them | Corrupts shadowed bindings silently. Only ever `scope.rename` via AST.       |
 
 ## Scope Limits
 
