@@ -85,10 +85,13 @@ grep -oE '"@[a-z0-9-]+/[a-z0-9-]+"' orig.js | sort -u | head
 ### 2. Beautify only if you need line numbers
 
 ```bash
+set -e                                           # stop on any failure below
+rm -rf wc-out                                    # never copy a previous run's output
 npx --yes webcrack@2.16.0 orig.js -o wc-out      # ~10s on 2.65MB, 74k changes
 cp wc-out/deobfuscated.js pass2.js
 npx --yes prettier@3.9.6 --write pass2.js --log-level warn
-node --check pass2.js && echo VALID
+node --check pass2.js || { echo BROKEN; exit 1; }
+echo VALID
 ```
 
 Measured: 907 → 154,720 → 166,985 lines. Longest line 156,328 → 1,524 chars

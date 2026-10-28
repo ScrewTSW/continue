@@ -8,7 +8,7 @@ license: Apache-2.0
 
 ## Overview
 
-A minified bundle is a context-window hazard before it is a comprehension problem. A 2.65 MB bundle is roughly 1.25 million tokens: reading it whole is impossible at any context size, and _attempting_ it destroys the session — the tool call never returns, so nothing is rendered and the model cannot even see why it failed.
+A minified bundle is a context-window hazard before it is a comprehension problem. A 2.65 MB bundle is roughly 830,000 tokens (the `bytes / 3.2` estimate from Step 3): reading it whole is impossible at any context size, and _attempting_ it destroys the session — the tool call never returns, so nothing is rendered and the model cannot even see why it failed.
 
 **Core principle: never let the bundle into context. Extract from it.**
 
@@ -67,14 +67,20 @@ doing Step 6:
 ```bash
 # one-time: the AST tooling that owns scope-safe renaming
 npx --yes skills@1.7.4 add ajsb85/humanify-deobfuscate -g
-(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install)
+(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm ci)
 ```
 
 Keep the `cd` in a subshell — unparenthesized it persists for the rest of the
 session, and Step 3's `cp bundle.js /tmp/work/orig.js` would then run from
 inside the skill directory.
 
-That `npm install` is **local to the skill directory**, not global — it writes
+Use `npm ci`, not `npm install`: the skill ships a `package-lock.json`, and
+its `package.json` asks for `@babel/*: ^7.25.0`, so a plain install resolves
+whatever 7.x is current (7.29.7 at the time of writing). `npm ci` installs the
+locked tree instead — the same pinning argument as `webcrack`, applied to the
+dependency tree rather than the CLI.
+
+That install is **local to the skill directory**, not global — it writes
 `node_modules/` under `~/.claude/skills/humanify-deobfuscate/scripts/` and
 mutates nothing else, so it is consistent with the no-`-g` rule above rather
 than an exception to it. It installs `@babel/parser`, `@babel/traverse`, and
@@ -89,10 +95,11 @@ and pinning the CLI only addresses half of it. For a reproducible install,
 fetch a tagged revision directly instead (`v1.0.0` at the time of writing):
 
 ```bash
-mkdir -p ~/.claude/skills && cd ~/.claude/skills
-curl -fsSL https://github.com/ajsb85/humanify-skill/archive/refs/tags/v1.0.0.tar.gz \
-  | tar xz --one-top-level=humanify-deobfuscate --strip-components=1
-(cd humanify-deobfuscate/scripts && npm install)
+( set -e
+  mkdir -p ~/.claude/skills && cd ~/.claude/skills
+  curl -fsSL https://github.com/ajsb85/humanify-skill/archive/refs/tags/v1.0.0.tar.gz \
+    | tar xz --one-top-level=humanify-deobfuscate --strip-components=1
+  cd humanify-deobfuscate/scripts && npm ci )
 ```
 
 Either way, read `scripts/*.mjs` before the first run — they parse and rewrite
@@ -102,7 +109,7 @@ files you are already treating as untrusted.
 have those packages somewhere else already, point it there instead and skip
 the install: `BABEL_FROM=/path/to/dir/with/node_modules`.
 
-Confirm it landed — a failed `skills add` or forgotten `npm install` shows up
+Confirm it landed — a failed `skills add` or forgotten `npm ci` shows up
 as a crash mid-pipeline otherwise:
 
 ```bash
@@ -197,9 +204,9 @@ signal, not a contradiction. Read them in the table's order and take the first
 row that matches:
 
 ```bash
+grep -c "sourceMappingURL"    orig.js   # CHECK FIRST — sourcemap = jackpot, stop here
 grep -c "^// "                orig.js   # esbuild module boundaries (0 = --minify)
 grep -c "__webpack_require__" orig.js   # webpack
-grep -c "sourceMappingURL"    orig.js   # sourcemap = jackpot, skip everything
 grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
 ```
 
@@ -319,9 +326,13 @@ reference counts from Babel's scope data, so naming effort goes to the few
 hundred symbols that carry the file:
 
 ```bash
-node <skill-dir>/scripts/refcount.mjs beautified.js refs.json \
+SKILL_DIR=~/.claude/skills/deminifying-javascript-bundles   # adjust if installed elsewhere
+node "$SKILL_DIR/scripts/refcount.mjs" beautified.js refs.json \
   --top-level-only --min-refs 50
 ```
+
+(`<skill-dir>` would be parsed as input redirection and fail, so this uses a
+real variable.)
 
 Do **not** rank candidates with `grep -c <name>`. On a real bundle that puts
 English words from error strings (`the`, `get`, `of`) at the top and reports

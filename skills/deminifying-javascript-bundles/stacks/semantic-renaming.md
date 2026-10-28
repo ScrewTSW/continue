@@ -56,12 +56,14 @@ by filtering `identifiers.json` to a target symbol list rather than by
 
 ```bash
 npx --yes skills@1.7.4 add ajsb85/humanify-deobfuscate -g
-(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install)
+(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm ci)
 ```
 
-Pin the CLI, keep the `cd` in a subshell, and note that `skills add` cannot
-pin the _skill's_ revision — see [../SKILL.md](../SKILL.md) Step 1 for a
-reproducible tagged-tarball install and why it matters here.
+Pin the CLI, keep the `cd` in a subshell, and use `npm ci` rather than
+`npm install` — the skill ships a lockfile, while its `package.json` floats
+`@babel/*` on `^7.25.0`. `skills add` still cannot pin the _skill's own_
+revision; see [../SKILL.md](../SKILL.md) Step 1 for a reproducible
+tagged-tarball install and why that gap matters.
 
 Installs `@babel/parser`, `@babel/traverse`, `@babel/generator` into
 `node_modules/` **inside that skill's directory** — local, not `-g`, so it is
@@ -71,7 +73,7 @@ No API key and no network calls at extraction/apply time: naming is done by
 whichever model is driving the session, in-context, not via an external LLM
 call.
 
-Verify before relying on it — a failed `skills add` or a skipped `npm install`
+Verify before relying on it — a failed `skills add` or a skipped `npm ci`
 surfaces much later as a confusing crash mid-pipeline. The scripts take no
 `--help` flag (they treat any argument as a filename), so smoke-test on a
 throwaway file instead; this exercises both the scripts and the Babel install:
@@ -170,7 +172,8 @@ Count references per _binding_ from Babel's scope data instead, with
 [../scripts/refcount.mjs](../scripts/refcount.mjs):
 
 ```bash
-node <skill-dir>/scripts/refcount.mjs pass2.js refs.json \
+SKILL_DIR=~/.claude/skills/deminifying-javascript-bundles   # adjust if installed elsewhere
+node "$SKILL_DIR/scripts/refcount.mjs" pass2.js refs.json \
   --top-level-only --min-refs 50
 ```
 

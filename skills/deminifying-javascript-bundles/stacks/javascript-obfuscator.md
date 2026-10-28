@@ -23,6 +23,8 @@ Hallmarks:
 Authoritative check — webcrack reports it explicitly:
 
 ```bash
+set -o pipefail                 # else grep's status masks a webcrack failure
+rm -rf wc-out                   # else a stale decode reads as a fresh success
 npx --yes webcrack@2.16.0 bundle.js -o wc-out 2>&1 | grep -i "string array"
 ```
 
