@@ -204,7 +204,10 @@ signal, not a contradiction. Read them in the table's order and take the first
 row that matches:
 
 ```bash
-grep -c "sourceMappingURL"    orig.js   # CHECK FIRST — sourcemap = jackpot, stop here
+# CHECK FIRST — but a marker alone isn't the jackpot: inline data: URLs carry no
+# separate file, and a referenced .map can be missing or stale. Verify the
+# referenced file actually exists before treating this as a stop condition.
+grep -o 'sourceMappingURL=[^ *]*' orig.js | tail -1 | sed 's/.*=//'   # inline data:... or a relative path
 grep -c "^// "                orig.js   # esbuild module boundaries (0 = --minify)
 grep -c "__webpack_require__" orig.js   # webpack
 grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
@@ -212,7 +215,7 @@ grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
 
 | Fingerprint                                                                | Attack plan                                                                             |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `sourceMappingURL` present, `.map` file exists                             | **Stop.** Recover original source from the sourcemap. Everything else is wasted effort. |
+| `sourceMappingURL` present AND the referenced `.map` file exists on disk   | **Stop.** Recover original source from the sourcemap. Everything else is wasted effort. |
 | `var X=Object.create;var{getPrototypeOf:...}=Object` prologue, zero `^// ` | [stacks/esbuild-minify.md](stacks/esbuild-minify.md) — **tested**                       |
 | `__webpack_require__`, numeric module map                                  | [stacks/webpack.md](stacks/webpack.md) — untested                                       |
 | Large string array + index-shuffle function at top                         | [stacks/javascript-obfuscator.md](stacks/javascript-obfuscator.md) — untested           |

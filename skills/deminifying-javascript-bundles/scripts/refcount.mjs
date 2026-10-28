@@ -27,13 +27,15 @@ const babelFrom =
   join(homedir(), ".claude/skills/humanify-deobfuscate/scripts/");
 let parser, traverse;
 try {
-  const require = createRequire(babelFrom.endsWith("/") ? babelFrom : babelFrom + "/");
+  const require = createRequire(
+    babelFrom.endsWith("/") ? babelFrom : babelFrom + "/",
+  );
   parser = require("@babel/parser");
   traverse = require("@babel/traverse").default;
 } catch {
   console.error(
     `Could not load @babel/parser + @babel/traverse from ${babelFrom}\n` +
-      `Install the humanify-deobfuscate skill and run 'npm install' in its\n` +
+      `Install the humanify-deobfuscate skill and run 'npm ci' in its\n` +
       `scripts/ dir, or set BABEL_FROM to a dir with those deps installed.`,
   );
   process.exit(1);
@@ -42,7 +44,9 @@ try {
 const file = process.argv[2];
 const out = process.argv[3];
 if (!file || !out) {
-  console.error("usage: node refcount.mjs <input.js> <out.json> [--min-refs N] [--top-level-only]");
+  console.error(
+    "usage: node refcount.mjs <input.js> <out.json> [--min-refs N] [--top-level-only]",
+  );
   process.exit(1);
 }
 let minRefs = 0;
@@ -52,7 +56,9 @@ if (process.argv.includes("--min-refs")) {
   // NaN, and `NaN > 0` is false, so a typo would silently disable filtering
   // and dump every binding instead of failing.
   if (!/^\d+$/.test(raw ?? "")) {
-    console.error(`--min-refs needs a non-negative integer, got: ${raw ?? "(nothing)"}`);
+    console.error(
+      `--min-refs needs a non-negative integer, got: ${raw ?? "(nothing)"}`,
+    );
     process.exit(1);
   }
   minRefs = Number(raw);
@@ -79,9 +85,13 @@ try {
 }
 
 if (ast.errors?.length) {
-  console.error(`parser reported ${ast.errors.length} error(s); counts would be unreliable:`);
+  console.error(
+    `parser reported ${ast.errors.length} error(s); counts would be unreliable:`,
+  );
   for (const e of ast.errors.slice(0, 5)) {
-    console.error(`  ${e.reasonCode ?? "error"} at line ${e.loc?.line}, column ${e.loc?.column}`);
+    console.error(
+      `  ${e.reasonCode ?? "error"} at line ${e.loc?.line}, column ${e.loc?.column}`,
+    );
   }
   console.error("fix the input (or re-run the beautify pass) before ranking.");
   process.exit(1);
@@ -130,13 +140,27 @@ kept.sort((a, b) => b.refs - a.refs);
 writeFileSync(out, JSON.stringify(kept, null, 2));
 
 const bucket = (r) =>
-  r <= 1 ? "1" : r <= 3 ? "2-3" : r <= 10 ? "4-10" : r <= 50 ? "11-50" : r <= 200 ? "51-200" : "200+";
+  r <= 1
+    ? "1"
+    : r <= 3
+      ? "2-3"
+      : r <= 10
+        ? "4-10"
+        : r <= 50
+          ? "11-50"
+          : r <= 200
+            ? "51-200"
+            : "200+";
 const hist = {};
 for (const r of kept) hist[bucket(r.refs)] = (hist[bucket(r.refs)] ?? 0) + 1;
 
 console.log(`bindings: ${total} total, ${kept.length} kept -> ${out}`);
-console.log("refs/binding:", ["1", "2-3", "4-10", "11-50", "51-200", "200+"]
-  .map((b) => `${b}:${hist[b] ?? 0}`).join("  "));
+console.log(
+  "refs/binding:",
+  ["1", "2-3", "4-10", "11-50", "51-200", "200+"]
+    .map((b) => `${b}:${hist[b] ?? 0}`)
+    .join("  "),
+);
 if (kept.length) {
   console.log("\ntop candidates:");
   for (const r of kept.slice(0, 25)) {

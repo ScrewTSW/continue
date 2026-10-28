@@ -55,15 +55,19 @@ by filtering `identifiers.json` to a target symbol list rather than by
 ### 1. Setup (once)
 
 ```bash
-npx --yes skills@1.7.4 add ajsb85/humanify-deobfuscate -g
-(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm ci)
+( set -e
+  mkdir -p ~/.claude/skills && cd ~/.claude/skills
+  curl -fsSL https://github.com/ajsb85/humanify-skill/archive/refs/tags/v1.0.0.tar.gz \
+    | tar xz --one-top-level=humanify-deobfuscate --strip-components=1
+  cd humanify-deobfuscate/scripts && npm ci )
 ```
 
-Pin the CLI, keep the `cd` in a subshell, and use `npm ci` rather than
-`npm install` — the skill ships a lockfile, while its `package.json` floats
-`@babel/*` on `^7.25.0`. `skills add` still cannot pin the _skill's own_
-revision; see [../SKILL.md](../SKILL.md) Step 1 for a reproducible
-tagged-tarball install and why that gap matters.
+This pins both halves: the tagged tarball fixes the _skill's_ revision (which
+`npx skills add ajsb85/humanify-deobfuscate -g` cannot do — it takes a repo,
+not a `repo@ref`, and leaves no `.git` or lockfile to tell what you got), and
+`npm ci` installs its exact locked `@babel/*` tree rather than floating on the
+`package.json`'s `^7.25.0`. See [../SKILL.md](../SKILL.md) Step 1 for the full
+rationale.
 
 Installs `@babel/parser`, `@babel/traverse`, `@babel/generator` into
 `node_modules/` **inside that skill's directory** — local, not `-g`, so it is
