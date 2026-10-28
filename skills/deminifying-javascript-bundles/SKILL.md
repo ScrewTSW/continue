@@ -205,9 +205,20 @@ row that matches:
 
 ```bash
 # CHECK FIRST — but a marker alone isn't the jackpot: inline data: URLs carry no
-# separate file, and a referenced .map can be missing or stale. Verify the
-# referenced file actually exists before treating this as a stop condition.
-grep -o 'sourceMappingURL=[^ *]*' orig.js | tail -1 | sed 's/.*=//'   # inline data:... or a relative path
+# separate file, and a referenced .map can be missing or stale. Resolve which
+# case you're in before treating this as a stop condition.
+#
+# Bound the match. An inline map is one base64 blob on a single line, so an
+# unbounded `grep -o` prints the entire payload — 200 KB on a 200 KB bundle,
+# recreating the exact context blow-up this preflight exists to prevent.
+ref=$(grep -o 'sourceMappingURL=[^ *]\{1,120\}' orig.js | tail -1 | sed 's/.*=//')
+case "$ref" in
+  "")     echo "no marker — keep deminifying" ;;
+  data:*) echo "INLINE map (no separate file): decode it, do not hunt for a .map" ;;
+  *)      if [ -f "$(dirname orig.js)/$ref" ]
+          then echo "STOP: sourcemap exists -> $ref"
+          else echo "marker points at MISSING/stale $ref — keep deminifying" ;fi ;;
+esac
 grep -c "^// "                orig.js   # esbuild module boundaries (0 = --minify)
 grep -c "__webpack_require__" orig.js   # webpack
 grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
@@ -215,7 +226,7 @@ grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
 
 | Fingerprint                                                                | Attack plan                                                                             |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `sourceMappingURL` present AND the referenced `.map` file exists on disk   | **Stop.** Recover original source from the sourcemap. Everything else is wasted effort. |
+| Probe says `STOP` (referenced `.map` exists) or `INLINE map`               | **Stop.** Recover original source from the sourcemap. Everything else is wasted effort. |
 | `var X=Object.create;var{getPrototypeOf:...}=Object` prologue, zero `^// ` | [stacks/esbuild-minify.md](stacks/esbuild-minify.md) — **tested**                       |
 | `__webpack_require__`, numeric module map                                  | [stacks/webpack.md](stacks/webpack.md) — untested                                       |
 | Large string array + index-shuffle function at top                         | [stacks/javascript-obfuscator.md](stacks/javascript-obfuscator.md) — untested           |
