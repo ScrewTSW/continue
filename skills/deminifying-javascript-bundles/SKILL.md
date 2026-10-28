@@ -64,15 +64,37 @@ doing Step 6:
 
 ```bash
 # one-time: the AST tooling that owns scope-safe renaming
-npx --yes skills add ajsb85/humanify-deobfuscate -g
-cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install
+npx --yes skills@1.7.4 add ajsb85/humanify-deobfuscate -g
+(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install)
 ```
+
+Keep the `cd` in a subshell — unparenthesized it persists for the rest of the
+session, and Step 3's `cp bundle.js /tmp/work/orig.js` would then run from
+inside the skill directory.
 
 That `npm install` is **local to the skill directory**, not global — it writes
 `node_modules/` under `~/.claude/skills/humanify-deobfuscate/scripts/` and
 mutates nothing else, so it is consistent with the no-`-g` rule above rather
 than an exception to it. It installs `@babel/parser`, `@babel/traverse`, and
 `@babel/generator`. No API key and no network calls at extract/apply time.
+
+**The skill revision cannot be pinned through this installer, and that is a
+real gap.** `skills add` takes a repo, not a `repo@ref`; the installed result
+carries no `.git` and writes no lockfile, so afterward there is no way to tell
+which revision you got. The same objection that motivates pinning `webcrack`
+— a third party choosing your AST-rewriting code at runtime — applies here,
+and pinning the CLI only addresses half of it. For a reproducible install,
+fetch a tagged revision directly instead (`v1.0.0` at the time of writing):
+
+```bash
+mkdir -p ~/.claude/skills && cd ~/.claude/skills
+curl -fsSL https://github.com/ajsb85/humanify-skill/archive/refs/tags/v1.0.0.tar.gz \
+  | tar xz --one-top-level=humanify-deobfuscate --strip-components=1
+(cd humanify-deobfuscate/scripts && npm install)
+```
+
+Either way, read `scripts/*.mjs` before the first run — they parse and rewrite
+files you are already treating as untrusted.
 
 `scripts/refcount.mjs` in _this_ skill borrows Babel from that install. If you
 have those packages somewhere else already, point it there instead and skip
@@ -115,18 +137,29 @@ activation, commands, and node APIs. Any React/webview UI lives in a _separate_
 bundle it points at. Cheap discriminator:
 
 ```bash
-grep -c "useState\|createElement" bundle.js   # ~0 = no UI here, wrong file
+grep -oF -e useState -e createElement bundle.js | wc -l   # ~0 = no UI, wrong file
 ```
+
+**Count occurrences, not matching lines.** `grep -c` counts lines, and a
+minified bundle has almost none — so it floors at roughly the line count no
+matter how much it actually matches. Measured on the reference
+`webview/index.js` (2,057 lines): `useState` is 4 by `grep -c` but **29**
+occurrences; `createElement` is 32 versus **214**. A `grep -c` of 4 reads like
+"barely any UI" when the file is the UI bundle. Use `grep -oF | wc -l` here
+and anywhere else the number informs a decision.
 
 If that returns near zero and you are looking for UI, find the real one:
 
 ```bash
-grep -oE '"[^"]+\.js"' extension.js | sort -u | head -20
+grep -oE '"[^"]{1,200}\.js"' extension.js | sort -u | head -20
 ```
 
 `"[a-z.]*js"` looks tighter but silently misses every real bundle path — it
 excludes `/`, digits, `_`, and `-`, so `"assets/index-D3f_2a.js"` does not match.
 Match any quoted non-quote run ending in `.js` and bound the output instead.
+The `{1,200}` matters on minified input: an unbounded `[^"]+` will happily
+print a multi-megabyte quoted blob that happens to end in `.js`, and `head -20`
+bounds lines, not bytes — the Iron Law applies to your own pipelines too.
 
 Measured cost of skipping this step: a full webcrack+prettier cycle on a 2.65 MB
 `extension.js` that contained no UI at all (`useState: 0`, `createElement: 2`).
@@ -138,12 +171,19 @@ would have redirected the entire effort.
 Never modify the original. Work on a copy, always.
 
 ```bash
-cp bundle.js /tmp/work/orig.js && cd /tmp/work
+set -e                                   # stop if the copy fails
+mkdir -p /tmp/work                       # not guaranteed to exist
+cp bundle.js /tmp/work/orig.js
+cd /tmp/work
 
 wc -lc orig.js                                        # bytes and lines
 awk '{if(length($0)>m)m=length($0)}END{print m}' orig.js   # longest line
 python3 -c "import os;print(int(os.path.getsize('orig.js')/3.2))"  # ~tokens
 ```
+
+Without the `mkdir`, `cp` fails on a fresh machine and every command below
+measures whatever `orig.js` happens to be in your current directory — or
+nothing at all. Fail here rather than three steps later.
 
 If est. tokens > half your context, the whole-file read is off the table — which is the normal case.
 
@@ -175,10 +215,15 @@ grep -c "_interopRequireDefault" orig.js  # babel/rollup CJS interop
 **Hunt string literals, not identifiers.** Minification destroys identifiers permanently (`Nkt`, `USt`, `pNt`) but preserves every string: error messages, config keys, URLs, package names, schema descriptions. Strings are the only durable semantic surface.
 
 ```bash
-grep -c -i "sandbox" orig.js                    # count FIRST — always
-grep -obF "sandbox" orig.js | head -20          # locate: BYTE offsets, not lines
+grep -oiF "sandbox" orig.js | wc -l             # count FIRST — occurrences, not lines
+grep -obiF "sandbox" orig.js | head -20         # locate: BYTE offsets, not lines
 grep -oE '"[a-z0-9@/_-]{4,40}"' orig.js | sort | uniq -c | sort -rn | head -30
 ```
+
+Keep the case mode identical in both commands. `grep -c -i` paired with a
+case-sensitive `grep -obF` is a trap: `Sandbox` then reports a positive count
+and zero locations, which reads as "the extractor is broken" rather than
+"wrong flag".
 
 **Locate by byte offset, never by line.** `grep -n` prints the whole matching
 line, and `| head -20` bounds the number of _lines_, not bytes — on minified

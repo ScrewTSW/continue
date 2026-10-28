@@ -30,8 +30,8 @@ Skip it if you only need to answer one fact — string-grepping
 
 [humanify](https://github.com/jehna/humanify)'s technique, via the
 `humanify-deobfuscate` Claude Code skill
-(`npx skills add ajsb85/humanify-deobfuscate -g`,
-[ajsb85/humanify-skill](https://github.com/ajsb85/humanify-skill)) — a
+([ajsb85/humanify-skill](https://github.com/ajsb85/humanify-skill), install in
+step 1 below) — a
 from-scratch, no-API-key, fully local reimplementation. It splits the problem
 in two: an AST tool (Babel-based, in `scripts/`) extracts every renameable
 binding plus its surrounding source as context, and owns applying the rename
@@ -55,9 +55,13 @@ by filtering `identifiers.json` to a target symbol list rather than by
 ### 1. Setup (once)
 
 ```bash
-npx --yes skills add ajsb85/humanify-deobfuscate -g
-cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install
+npx --yes skills@1.7.4 add ajsb85/humanify-deobfuscate -g
+(cd ~/.claude/skills/humanify-deobfuscate/scripts && npm install)
 ```
+
+Pin the CLI, keep the `cd` in a subshell, and note that `skills add` cannot
+pin the _skill's_ revision — see [../SKILL.md](../SKILL.md) Step 1 for a
+reproducible tagged-tarball install and why it matters here.
 
 Installs `@babel/parser`, `@babel/traverse`, `@babel/generator` into
 `node_modules/` **inside that skill's directory** — local, not `-g`, so it is
@@ -110,12 +114,24 @@ print(len(hits), 'of', data['count'], 'bindings matched')
 "
 ```
 
-Each entry has `pos` (declaration byte offset — the rename key), `name`,
+Each entry has `pos` (declaration offset — the rename key), `name`,
 `kind` (`var`/`hoisted`/etc.), `line`, and `context` (windowed source around
 the declaration; tune window size with `CONTEXT_SIZE=2500` for denser code).
 `pos` is stable across re-runs on the same file; it is what ties a name
 decision back to one specific declaration even if the same mangled name
 (`e`, `t`, `n`) appears in a hundred unrelated scopes.
+
+`pos` is Babel's `node.start` — a **UTF-16 code-unit index**, not a UTF-8 byte
+offset. The two coincide only while everything before the declaration is
+ASCII, which is usually but not always true of a bundle (one emoji or
+non-Latin string literal earlier in the file is enough to break it). Treat it
+as an opaque join key between the extraction and the rename map; do not feed
+it to the byte-oriented tools the parent skill uses elsewhere (`grep -ob`
+offsets, `dd skip=`, `tail -c`) without converting first:
+
+```python
+byte_off = len(src[:pos].encode("utf-8"))   # UTF-16 index -> UTF-8 byte offset
+```
 
 **How to find your target names first**, if you don't already know them:
 read the surrounding code by hand with the parent skill's byte-bounded
@@ -249,26 +265,37 @@ Write the rename map keyed by `pos`:
 
 ### 4. Apply and verify
 
+Back up **first** — passing the same path as input and output rewrites the
+file in place, so there is nothing to restore afterward:
+
 ```bash
+cp pass2.js pass2.js.prepass
+
 node ~/.claude/skills/humanify-deobfuscate/scripts/apply_renames.mjs \
   pass2.js renames.json pass2.js
 
 # Fail closed: `... && echo VALID` alone exits 0 even when the check fails.
-node --check pass2.js || { echo "BROKEN - restore the backup"; exit 1; }
+node --check pass2.js || { echo "BROKEN - restore pass2.js.prepass"; exit 1; }
 echo VALID
 ```
 
-Apply to a **copy you can throw away**, or keep a pre-pass backup — an apply
-rewrites the file in place when input and output are the same path:
+**Reconcile the counts yourself; `skipped` does not catch a stale `pos`.**
+The script reports `applied N renames, skipped M`, but it builds its work list
+by walking bindings and keeping those whose `pos` is a key in your map — so a
+`pos` matching _no_ binding is never added to the list and never counted as
+skipped. A map full of stale offsets reports `applied 0, skipped 0`, which
+reads like success. Check the arithmetic instead:
 
 ```bash
-cp pass2.js pass2.js.prepass
+python3 -c "import json;print('map entries:', len(json.load(open('renames.json'))))"
+# applied + skipped must equal this. If it is lower, the difference is stale
+# offsets that silently did nothing.
 ```
 
-Reports `applied N renames, skipped M`. Investigate any skip — it means the
-`pos` didn't match a binding declaration in the current file (stale offset
-from a file that's since been re-extracted/re-formatted elsewhere, or a typo
-in the map).
+A genuine `skipped` means the new name was empty, not a string, or identical
+to the old one. A shortfall against the map size means the `pos` is stale —
+usually because the file was re-formatted or re-generated after the
+extraction, which shifts every offset (see "Gotchas").
 
 **Re-verify at multiple call sites, not just the declaration.** Grep for the
 new name after applying — a correct scope-safe rename shows up consistently
@@ -297,10 +324,10 @@ Renaming a binding that is exported makes Babel split the statement to keep
 the _public_ name stable:
 
 ```js
-export var b = Jbe;              // before
+export var b = Jbe; // before
 // becomes:
-var jsx = jsxFactory;            // after
-export { jsx as b };             //   local renamed, external name unchanged
+var jsx = jsxFactory; // after
+export { jsx as b }; //   local renamed, external name unchanged
 ```
 
 That is correct ES-module semantics — consumers importing `b` keep working.
@@ -317,6 +344,34 @@ cost is one ~50s apply. Earlier hesitation about "huge blast radius" for these
 two symbols was misplaced: that reasoning applies to _hand_-editing, which you
 must never do anyway. The real selection criterion is whether the name buys
 readability, not how often it appears.
+
+**The scope-safety guarantee stops at the AST — identifiers inside strings are
+not renamed.** Scope analysis cannot see into a `eval("...")`, `new
+Function("...")`, or a string later fed to one, so a rename silently
+desynchronizes the code from the string. Measured on the published
+`apply_renames.mjs`:
+
+```js
+function a() {
+  return 42;
+}
+console.log(eval("a()")); // -> stays "a()" after a renames to computeAnswer
+```
+
+It reported `applied 1 renames, skipped 0`, `node --check` passed, and the
+file then threw `a is not defined` at runtime. Every check in this document
+would have called that a success. Before renaming, look for the hazard:
+
+```bash
+grep -oE "eval\(|new Function\(" pass2.js | wc -l
+```
+
+A nonzero count does not block the work — bundlers emit `eval` rarely, and
+usually in a dead `process.env.NODE_ENV` branch — but it does mean
+`node --check` is no longer sufficient evidence and the result needs an actual
+runtime smoke test. The same caveat applies to any dynamic property access
+built from a string (`obj["pre" + "fix"]`), though that affects property
+names, which this tool never renames anyway.
 
 **Line numbers shift after every apply.** `apply_renames.mjs` fully
 re-parses and re-generates via Babel, which reflows formatting, not just

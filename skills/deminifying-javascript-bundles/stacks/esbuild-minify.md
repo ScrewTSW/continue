@@ -58,7 +58,7 @@ extension host bundle specifically.
 Highest-yield step; frequently ends the task.
 
 ```bash
-grep -c -i "TERM" orig.js                 # count first, always
+grep -oiF "TERM" orig.js | wc -l          # count first: occurrences, not lines
 grep -obiF "TERM" orig.js | head -20      # then locate, by BYTE offset
 ```
 
@@ -126,10 +126,10 @@ enforcement lived in a separate CLI binary. Report which you verified.
 Question: _how does the sandbox configuration work?_
 
 ```bash
-grep -c -i "sandbox" orig.js        # 33 — small enough to enumerate
+grep -oiF "sandbox" orig.js | wc -l # 53 occurrences — small enough to enumerate
 grep -obiF "sandbox" orig.js | head -20
 ```
 
-33 hits clustered in one region → beautify → `grep -n "sandbox" pass2.js` →
+53 hits clustered in one region → beautify → `grep -n "sandbox" pass2.js` →
 `sed -n` windows over the Zod schema at 139574–139766. Answer obtained reading
 ~600 lines of a 166,985-line file, ~32k tokens total including exploration.
