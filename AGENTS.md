@@ -31,6 +31,6 @@ git push -u origin <feature-branch>
 
 ## Labels
 
-- `INSANITY` — v3 migration work (gutting and rebuild)
+- `INSANITY` — v3 migration work (gutting and rebuild); also marks dogfooding items required or enhanced by that process
 - `MVP` — required for the v3 MVP VSIX
 - `obsolete` — superseded by the v3 architecture

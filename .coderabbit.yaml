@@ -1,7 +1,12 @@
 # CodeRabbit configuration
 # Docs-only changes (markdown, docs sites, CI configs) do not consume
 # reviews; anything with code in it still gets fully reviewed.
+# v3 is the mainline but not the GitHub default branch, so PRs targeting
+# it are only auto-reviewed when listed here.
 reviews:
+  auto_review:
+    base_branches:
+      - "^v3$"
   path_filters:
     - "!**/*.md"
     - "!AGENTS.md"
