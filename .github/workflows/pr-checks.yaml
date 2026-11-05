@@ -5,10 +5,12 @@ on:
   pull_request:
     branches:
       - main
+      - v3
 
   push:
     branches:
       - main
+      - v3
 
 jobs:
   track-rerun:
@@ -119,6 +121,7 @@ jobs:
           npm test
 
   binary-checks:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -224,6 +227,7 @@ jobs:
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
 
   vscode-get-test-file-matrix:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     runs-on: ubuntu-latest
     outputs:
       test_file_matrix: ${{ steps.vscode-get-test-file-matrix.outputs.test_file_matrix }}
@@ -310,6 +314,7 @@ jobs:
 
   vscode-e2e-tests:
     name: ${{ matrix.test_file || 'unknown' }} (${{ matrix.command }})
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     needs: [vscode-get-test-file-matrix, vscode-package-extension-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -332,6 +337,7 @@ jobs:
           github_token: ${{ secrets.CI_GITHUB_TOKEN }}
 
   jetbrains-tests:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

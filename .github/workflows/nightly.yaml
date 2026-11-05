@@ -23,6 +23,12 @@ concurrency:
 permissions:
   contents: read
 
+# The branch nightly builds are cut from. v3 is the active development line;
+# main is the frozen 2.x line. Scheduled runs execute this file from the
+# default branch, so the ref is pinned here rather than inherited.
+env:
+  NIGHTLY_REF: v3
+
 jobs:
   # Skip the (expensive) matrix entirely when main hasn't moved since the
   # last nightly tag. Manual dispatch can override with `force`.
@@ -32,9 +38,11 @@ jobs:
       should_build: ${{ steps.check.outputs.should_build }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      built_sha: ${{ steps.version.outputs.sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ env.NIGHTLY_REF }}
           fetch-depth: 0
 
       # Steps below run `node` before the build action sets it up, so pin it
@@ -43,13 +51,17 @@ jobs:
         with:
           node-version-file: ".nvmrc"
 
-      # `workflow_dispatch` allows any ref to be selected
-      # Scheduled runs always use the default branch.
-      - name: Refuse to build from anything but main unless manual trigger
-        if: github.event_name != 'workflow_dispatch'
+      # Scheduled runs execute this file from the default branch, so verify
+      # the pinned NIGHTLY_REF is what actually got checked out.
+      - name: Refuse to build from an unexpected ref
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Nightly builds must run from refs/heads/main (got $GITHUB_REF)"
+          CHECKED_OUT=$(git rev-parse --abbrev-ref HEAD)
+          if [ "$CHECKED_OUT" != "$NIGHTLY_REF" ]; then
+            echo "::error::Nightly builds must run from $NIGHTLY_REF (got $CHECKED_OUT)"
+            exit 1
+          fi
+          if [ "$NIGHTLY_REF" != "v3" ] && [ "$NIGHTLY_REF" != "main" ]; then
+            echo "::error::NIGHTLY_REF must be v3 or main (got $NIGHTLY_REF)"
             exit 1
           fi
 
@@ -91,6 +103,7 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "Nightly version: $VERSION"
 
   build:
@@ -139,6 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ env.NIGHTLY_REF }}
           fetch-depth: 0
 
       # The version rewrite below runs before the build action's own setup.
@@ -199,9 +213,9 @@ jobs:
           # Always --prerelease, never --latest.
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
-            --target "${{ github.sha }}" \
+            --target "${{ needs.check-changes.outputs.built_sha }}" \
             --title "$TAG" \
-            --notes "Automated nightly build from \`${{ github.ref_name }}\` (${{ github.sha }}).
+            --notes "Automated nightly build from \`$NIGHTLY_REF\` (${{ needs.check-changes.outputs.built_sha }}).
 
           **Pre-release — not for production use.**
 
