@@ -113,6 +113,8 @@ runs:
       shell: bash
       env:
         CONTINUE_VSCODE_TARGET: ${{ steps.set-target.outputs.target }}
+        # Used by the opencode release lookup to avoid API rate limits
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         cd extensions/vscode
         export CONTINUE_VSCODE_TARGET="${{ steps.set-target.outputs.target }}"
