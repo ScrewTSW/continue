@@ -1,0 +1,11 @@
+# CodeRabbit configuration
+# Docs-only changes (markdown, docs sites, CI configs) do not consume
+# reviews; anything with code in it still gets fully reviewed.
+reviews:
+  path_filters:
+    - "!**/*.md"
+    - "!AGENTS.md"
+    - "!docs/**"
+    - "!docs-site/**"
+    - "!.github/**/*.yaml"
+    - "!.github/**/*.yml"
