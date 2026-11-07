@@ -368,7 +368,9 @@ jobs:
   # GitHub does not have a way of requiring that all checks pass (you must manually select each job)
   # This action at least lets us manage the list of required tests via source control
 
-  # so that creators of new jobs can add them to this list
+  # so that creators of new jobs can add them to this list.
+  # Jobs that skip v3 by branch condition (see each job's if:) must
+  # also appear in allowed-skips below; keep the three in sync.
   require-all-checks-to-pass:
     if: always()
     runs-on: ubuntu-latest
@@ -390,7 +392,9 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          # v3 runs the VSIX-focused subset; these jobs are skipped
-          # there by branch condition. On main they run: a skip of any
-          # of them there, or a failure anywhere, still fails the gate.
-          allowed-skips: binary-checks, core-checks, gui-checks, get-packages-matrix, packages-checks, vscode-get-test-file-matrix, vscode-e2e-tests, jetbrains-tests
+          # v3 runs the VSIX-focused subset; the jobs above that carry
+          # the v3 branch condition are skipped there and tolerated by
+          # the gate. The list applies to v3 only: on main it evaluates
+          # empty, every job runs, and any skip or failure fails the
+          # gate.
+          allowed-skips: ${{ (github.ref == 'refs/heads/v3' || github.base_ref == 'v3') && 'binary-checks, core-checks, gui-checks, get-packages-matrix, packages-checks, vscode-get-test-file-matrix, vscode-e2e-tests, jetbrains-tests' || '' }}
