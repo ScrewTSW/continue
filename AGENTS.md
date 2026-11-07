@@ -21,8 +21,8 @@ git push -u origin <feature-branch>
 
 ## CI on v3
 
-- `pr-checks.yaml` runs on every push to `v3` and on PRs targeting it: tests, the VSIX build job, and the `require-all-checks-to-pass` gate.
-- Jobs for surfaces dropped in v3 (binary, e2e, JetBrains) are skipped on `v3` by branch condition.
+- `pr-checks.yaml` runs the full suite on `main`. On `v3` it runs the VSIX-focused subset: prettier, vscode-checks (typecheck, lint, vitest), and the VSIX package build, gated by `require-all-checks-to-pass`.
+- The other jobs (core, gui, packages test suites, binary, e2e, JetBrains) are skipped on `v3` by branch condition and named in the gate's `allowed-skips`.
 - `nightly.yaml` builds and publishes the nightly pre-release from `v3` (pinned `NIGHTLY_REF`).
 
 ## v3 architecture direction

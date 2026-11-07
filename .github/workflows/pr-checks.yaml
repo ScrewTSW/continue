@@ -1,6 +1,8 @@
 name: PR Checks
 
-# PR Checks run on all PRs to the main branch and must pass before merging.
+# Full suite on main. v3 runs the VSIX-focused subset (format, vscode
+# checks, VSIX package build); the other jobs are skipped there by
+# branch condition and tolerated by the gate below.
 on:
   pull_request:
     branches:
@@ -43,6 +45,7 @@ jobs:
         run: npx prettier --check "**/*.{js,jsx,ts,tsx,json,css,md}" --ignore-path .gitignore --ignore-path .prettierignore
 
   core-checks:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -91,6 +94,7 @@ jobs:
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
 
   gui-checks:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -175,6 +179,7 @@ jobs:
           npm run vitest
 
   get-packages-matrix:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.get-packages.outputs.packages }}
@@ -188,6 +193,7 @@ jobs:
           echo "Found packages: $packages"
 
   packages-checks:
+    if: github.ref != 'refs/heads/v3' && github.base_ref != 'v3'
     needs: get-packages-matrix
     runs-on: ubuntu-latest
     strategy:
@@ -384,6 +390,7 @@ jobs:
         uses: re-actors/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-          # v3 branch conditions skip these jobs (their surfaces are
-          # dropped in v3); a skip there must not fail the gate
-          allowed-skips: binary-checks, vscode-get-test-file-matrix, vscode-e2e-tests, jetbrains-tests
+          # v3 runs the VSIX-focused subset; these jobs are skipped
+          # there by branch condition. On main they run: a skip of any
+          # of them there, or a failure anywhere, still fails the gate.
+          allowed-skips: binary-checks, core-checks, gui-checks, get-packages-matrix, packages-checks, vscode-get-test-file-matrix, vscode-e2e-tests, jetbrains-tests
