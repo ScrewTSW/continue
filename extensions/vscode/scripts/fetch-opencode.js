@@ -135,8 +135,13 @@ function extractBinary(archivePath, binaryName, isWindowsTarget) {
   fs.mkdirSync(extractDir, { recursive: true });
 
   const exe = isWindowsTarget ? ".exe" : "";
+  // Pick the zip extractor by host, not by archive type: Git Bash on
+  // windows-latest does not ship unzip, but Windows ships bsdtar, which
+  // reads zip archives. Linux and macOS hosts have unzip.
   const cmd = archivePath.endsWith(".zip")
-    ? `unzip -o "${archivePath}" -d "${extractDir}"`
+    ? process.platform === "win32"
+      ? `tar -xf "${archivePath}" -C "${extractDir}"`
+      : `unzip -o "${archivePath}" -d "${extractDir}"`
     : `tar -xzf "${archivePath}" -C "${extractDir}"`;
   try {
     execSync(cmd, { stdio: "pipe" });

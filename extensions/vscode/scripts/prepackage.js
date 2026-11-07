@@ -46,10 +46,6 @@ if (!target) {
   }
 }
 
-// The opencode manifest distinguishes alpine (musl) from linux (glibc), so
-// capture the target before normalization flattens alpine into linux.
-const rawTarget = target;
-
 let os;
 let arch;
 if (target) {
@@ -57,6 +53,11 @@ if (target) {
 } else {
   [os, arch] = autodetectPlatformAndArch();
 }
+
+// The opencode manifest distinguishes alpine (musl) from linux (glibc), so
+// capture the target before normalization flattens alpine into linux. When
+// no target was given, the autodetected platform is the raw target.
+const rawTarget = target ?? `${os}-${arch}`;
 
 if (os === "alpine") {
   os = "linux";
