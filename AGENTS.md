@@ -7,12 +7,14 @@ Guidance for AI coding agents working in this repository.
 - `v3` is the mainline branch. All development targets `v3`.
 - Never push directly to `v3` or `main`. Both are protected; direct pushes are rejected.
 - Always create a feature branch from an up-to-date `v3` and open a pull request against `v3`.
+- Run the self-review gate (`skills/self-review/SKILL.md`) before pushing a feature branch; it must return `CLEAR`, with any blocking findings fixed or explicitly signed off per the skill.
 - Merge only after the required CI checks pass (tests, VSIX build). Linear history is enforced.
 
 ```bash
 git checkout v3 && git pull origin v3
 git checkout -b <feature-branch>
 # ... commit ...
+# run the self-review gate (skills/self-review/SKILL.md) before pushing
 git push -u origin <feature-branch>
 # open a PR targeting v3
 ```
