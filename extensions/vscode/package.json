@@ -662,6 +662,7 @@
     "vitest": "vitest run",
     "write-build-timestamp": "node scripts/write-build-timestamp.js",
     "prepackage": "node scripts/prepackage.js",
+    "fetch-opencode": "node scripts/fetch-opencode.js",
     "package": "node scripts/package.js",
     "package-all": "node scripts/package-all.js",
     "package:pre-release": "node scripts/package.js --pre-release",

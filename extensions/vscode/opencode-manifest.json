@@ -1,0 +1,39 @@
+{
+  "repository": "sst/opencode",
+  "version": "1.19.5",
+  "binaryName": "opencode",
+  "targets": {
+    "alpine-arm64": {
+      "asset": "opencode-linux-arm64-musl.tar.gz",
+      "sha256": "3522eccafd30d84a2d770b72a56d4877c576b9072b36a5a9ea0fa30ed82b896e"
+    },
+    "alpine-x64": {
+      "asset": "opencode-linux-x64-musl.tar.gz",
+      "sha256": "e8d5be23bf8f3f69bc3206f3311215c049329cd6afa7c06d733987cc2d33b568"
+    },
+    "darwin-arm64": {
+      "asset": "opencode-darwin-arm64.zip",
+      "sha256": "c1c9e62521192192ef4c3ed1355ada2144055bddb61682217e997b03c55203c1"
+    },
+    "darwin-x64": {
+      "asset": "opencode-darwin-x64.zip",
+      "sha256": "b0212efa6db347187225a17fa3a31c6b261bf4c9f1589a290b0ca902d720d250"
+    },
+    "linux-arm64": {
+      "asset": "opencode-linux-arm64.tar.gz",
+      "sha256": "fae5be262d693b7c5e562856cc473e59e741772936db0c0600ac0d5ed5bd088b"
+    },
+    "linux-x64": {
+      "asset": "opencode-linux-x64.tar.gz",
+      "sha256": "588310a336fa3b9df36b3f0225b26f679d453efaad0cf3d66c3651ef3ec1647a"
+    },
+    "win32-arm64": {
+      "asset": "opencode-windows-arm64.zip",
+      "sha256": "5d49139bd917511ff35a3c06065c9f47918346668f05ea020e778286f302fbb7"
+    },
+    "win32-x64": {
+      "asset": "opencode-windows-x64.zip",
+      "sha256": "09a6e693157f0887e504f2cf4357a8cbddc5ead5d0dffb9a269dcc47c48640f5"
+    }
+  }
+}

@@ -11,6 +11,7 @@ const {
 } = require("../../../scripts/util/index");
 
 const { copySqlite } = require("./download-copy-sqlite");
+const { fetchOpenCode } = require("./fetch-opencode");
 const { generateAndCopyConfigYamlSchema } = require("./generate-copy-config");
 const { installAndCopyNodeModules } = require("./install-copy-nodemodule");
 const { npmInstall } = require("./npm-install");
@@ -52,6 +53,11 @@ if (target) {
 } else {
   [os, arch] = autodetectPlatformAndArch();
 }
+
+// The opencode manifest distinguishes alpine (musl) from linux (glibc), so
+// capture the target before normalization flattens alpine into linux. When
+// no target was given, the autodetected platform is the raw target.
+const rawTarget = target ?? `${os}-${arch}`;
 
 if (os === "alpine") {
   os = "linux";
@@ -337,8 +343,10 @@ void (async () => {
 
   if (!skipInstalls) {
     await copySqlite(target);
+    await fetchOpenCode(rawTarget);
   } else {
     console.log("[info] Skipping sqlite download because SKIP_INSTALLS=true");
+    console.log("[info] Skipping opencode fetch because SKIP_INSTALLS=true");
   }
 
   console.log("[info] Copying sqlite node binding from core");
@@ -440,7 +448,7 @@ void (async () => {
   );
 
   // Validate the all of the necessary files are present
-  validateFilesPresent([
+  const filesToValidate = [
     // Queries used to create the index for @code context provider
     "tree-sitter/code-snippet-queries/c_sharp.scm",
 
@@ -489,7 +497,14 @@ void (async () => {
     // out/node_modules (to be accessed by extension.js)
     `out/node_modules/@vscode/ripgrep/bin/rg${exe}`,
     `out/node_modules/@lancedb/vectordb-${target}${isWinTarget ? "-msvc" : ""}${isLinuxTarget ? "-gnu" : ""}/index.node`,
-  ]);
+  ];
+
+  if (!skipInstalls) {
+    // OpenCode engine binary (fetched from its GitHub releases, checksum-pinned)
+    filesToValidate.push(`bin/opencode/opencode${exe}`);
+  }
+
+  validateFilesPresent(filesToValidate);
 
   console.log(
     `[timer] Prepackage completed in ${Date.now() - startTime}ms - finished at ${new Date().toISOString()}`,
